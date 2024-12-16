@@ -9,7 +9,7 @@ library(doParallel)
 
 CCA_rrr = function(X, Y, Sx=NULL, Sy=NULL,
                    lambda = 0, Kx=NULL, r, highdim=TRUE, 
-                   lambda_Kx=0, solver="rrr",
+                   lambda_Kx=0, solver="ADMM",
                    LW_Sy = FALSE,
                    do.scale = TRUE,
                    rho=1,
