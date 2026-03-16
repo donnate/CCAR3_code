@@ -1,12 +1,9 @@
 .Rproj.user
 .Rhistory
 .RData
-<<<<<<< HEAD
 *.png
-=======
 *.csv
-*.pdf
+
 experiments/simulations/logs/*
->>>>>>> e09b699dfa54345b1f8e05bed6172f794a6eadf7
 experiments/simulations/results/*
 .Ruserdata
