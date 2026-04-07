@@ -2,9 +2,9 @@
 
 # Define the values for the variables
 theta_strengths="high medium low"
-n_values="100 300 500 1000 5000 10000"
+n_values="100 300 500 1000 5000 10000 100000"
 p_values="1000"
-q_values="30 50 80"
+q_values="10 50 80"
 r_values="3"
 
 for theta in $theta_strengths; do
@@ -19,4 +19,4 @@ for theta in $theta_strengths; do
     done
   done
 done
-~      
+

@@ -1,12 +1,57 @@
+get_script_path <- function() {
+  file_arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  if (length(file_arg) == 1L) {
+    return(normalizePath(sub("^--file=", "", file_arg), winslash = "/", mustWork = TRUE))
+  }
+
+  if (!is.null(sys.frames()[[1]]$ofile)) {
+    return(normalizePath(sys.frames()[[1]]$ofile, winslash = "/", mustWork = TRUE))
+  }
+
+  stop("Could not determine the script path.", call. = FALSE)
+}
+
+script_path <- get_script_path()
+repo_root <- normalizePath(file.path(dirname(script_path), "..", ".."), winslash = "/", mustWork = TRUE)
+setwd(repo_root)
+
+write_results_csv <- function(df, relative_path) {
+  out_path <- file.path(repo_root, relative_path)
+  dir.create(dirname(out_path), recursive = TRUE, showWarnings = FALSE)
+  utils::write.csv(df, out_path, row.names = FALSE)
+}
+
+source_local_ccar3_methods <- function(ccar3_dir = Sys.getenv("CCAR3_PKG_PATH", unset = "/scratch/midway3/cdonnat/ccar3")) {
+  ccar3_dir <- normalizePath(ccar3_dir, winslash = "/", mustWork = TRUE)
+  options(ccar3_pkg_path = ccar3_dir)
+  Sys.setenv(CCAR3_PKG_PATH = ccar3_dir)
+
+  ccar3_env <- new.env(parent = globalenv())
+
+  sys.source(file.path(ccar3_dir, "R", "helpers.r"), envir = ccar3_env)
+  sys.source(file.path(ccar3_dir, "R", "utils.R"), envir = ccar3_env)
+  sys.source(file.path(ccar3_dir, "R", "reduced_rank_regression.R"), envir = ccar3_env)
+  sys.source(file.path(ccar3_dir, "R", "group_reduced_rank_regression.R"), envir = ccar3_env)
+  sys.source(file.path(ccar3_dir, "R", "graph_reduced_rank_regression.R"), envir = ccar3_env)
+
+  ccar3_env
+}
+
+normalize_cv_fit <- function(fit) {
+  if (!is.null(fit$U) && is.null(fit$ufinal)) {
+    fit$ufinal <- fit$U
+  }
+  if (!is.null(fit$V) && is.null(fit$vfinal)) {
+    fit$vfinal <- fit$V
+  }
+  fit
+}
+
 library(ggplot2)
 library(dplyr)
-library(fields)
 library(CCA)
 library(tidyr)
-library(zoo)
 library(pracma)
-library(rrpack)
-library(corpcor)
 
 source("experiments/simulations/generate_example_rrr.R")
 source('experiments/experiment_functions.R')
@@ -16,7 +61,7 @@ source('experiments/alternative_methods/Witten_CrossValidation.R')
 source('experiments/alternative_methods/Waaijenborg.R')
 source('experiments/alternative_methods/scca_chao.R')
 source("experiments/evaluation.R")
-source("src/reduced_rank_regression.R")
+ccar3_methods <- source_local_ccar3_methods()
 
 args <- commandArgs(trailingOnly=TRUE)
 seed <- as.numeric(args[1])
@@ -127,12 +172,13 @@ for(seed_n in seeds){
                 
                 tryCatch({
                 start_time_alt2 <- system.time({
-                  res_alt = CCA_rrr.CV(X, Y, 
-                             r=r, Kx = NULL, lambda_Kx = 0,
-                             do.scale = TRUE,
-                             param_lambda=c(10^seq(-3, 1, length.out = 30)),
-                             kfolds=3, solver="rrr", LW_Sy = LW_Sy)
+                  res_alt = ccar3_methods$cca_rrr_cv(X, Y,
+                                                     r = r,
+                                                     standardize = TRUE,
+                                                     lambdas = c(10^seq(-3, 1, length.out = 30)),
+                                                     kfolds = 3, solver = "rrr", LW_Sy = LW_Sy)
                 })
+                res_alt <- normalize_cv_fit(res_alt)
                 res_alt$ufinal[which(is.na( res_alt$ufinal))] <- 0
                 res_alt$vfinal[which(is.na( res_alt$vfinal))] <- 0
                 Uhat <- res_alt$ufinal[, 1:r]
@@ -141,12 +187,12 @@ for(seed_n in seeds){
                   #### Choose another lambda
                   lambda_chosen = max(res_alt$resultsx$lambda[which(res_alt$resultsx$rmse > 1.05 * min(res_alt$resultsx$rmse))])
                   start_time_alt <- system.time({
-                    res_alt <- CCA_rrr(X, Y, Sx = NULL, Sy=NULL,
-                                       lambda =lambda_chosen, Kx=NULL, r, highdim=TRUE,
-                                       solver="rrr",
-                                       LW_Sy = LW_Sy, do.scale=TRUE)
+                    res_alt <- ccar3_methods$cca_rrr(X, Y, Sx = NULL, Sy = NULL,
+                                                     lambda = lambda_chosen, r = r, highdim = TRUE,
+                                                     solver = "rrr",
+                                                     LW_Sy = LW_Sy, standardize = TRUE)
                     res_alt$U[which(is.na(res_alt$U))] <- 0
-                    res_alt$V[which(is.na(res_alt$v))] <- 0
+                    res_alt$V[which(is.na(res_alt$V))] <- 0
                     Uhat <- res_alt$U[, 1:r]
                     Vhat <- res_alt$V[, 1:r]
                     
@@ -182,12 +228,13 @@ for(seed_n in seeds){
                 print(paste0("Starting ", "Alt opt2") )
                 tryCatch({
                 start_time_alt3 <- system.time({
-                  res_alt = CCA_rrr.CV(X, Y,
-                             r=r, Kx = NULL, lambda_Kx = 0,
-                             param_lambda=c(10^seq(-3, 1, length.out = 30)),
-                             kfolds=3, solver="ADMM", LW_Sy = LW_Sy, do.scale = TRUE,
-                             rho=1, niter=2 * 1e4, thresh = 1e-6)
+                  res_alt = ccar3_methods$cca_rrr_cv(X, Y,
+                                                     r = r,
+                                                     lambdas = c(10^seq(-3, 1, length.out = 30)),
+                                                     kfolds = 3, solver = "ADMM", LW_Sy = LW_Sy, standardize = TRUE,
+                                                     rho = 1, niter = 2 * 1e4, thresh = 1e-6)
                 })
+                res_alt <- normalize_cv_fit(res_alt)
                 res_alt$ufinal[which(is.na( res_alt$ufinal))] <- 0
                 res_alt$vfinal[which(is.na( res_alt$vfinal))] <- 0
                 Uhat <- res_alt$ufinal[, 1:r]
@@ -198,15 +245,15 @@ for(seed_n in seeds){
                   while(sum(apply(Uhat, 1, function(x){sum(x!=0)}) >0) <r){
                     lambda_chosen = lambda_chosen / 2
                     #start_time_alt <- system.time({
-                      res_alt <- CCA_rrr(X, Y, Sx = NULL, Sy=NULL,
-                                         lambda =lambda_chosen, Kx=NULL, 
-                                         r=r, 
-                                         highdim=TRUE,
-                                         solver="ADMM",
-                                         LW_Sy = LW_Sy, do.scale=TRUE,
-                                         thresh = 1e-6)
+                      res_alt <- ccar3_methods$cca_rrr(X, Y, Sx = NULL, Sy = NULL,
+                                                       lambda = lambda_chosen,
+                                                       r = r,
+                                                       highdim = TRUE,
+                                                       solver = "ADMM",
+                                                       LW_Sy = LW_Sy, standardize = TRUE,
+                                                       thresh = 1e-6)
                       res_alt$U[which(is.na(res_alt$U))] <- 0
-                      res_alt$V[which(is.na(res_alt$v))] <- 0
+                      res_alt$V[which(is.na(res_alt$V))] <- 0
                       Uhat <- res_alt$U[, 1:r]
                       Vhat <- res_alt$V[, 1:r]
                       
@@ -245,14 +292,15 @@ for(seed_n in seeds){
 
               tryCatch({
                 start_time_alt4<- system.time({
-                  res_alt = CCA_group_rrr.CV(X, Y, 
-                             groups = gen$groups,
-                             r=r, Kx = NULL, lambda_Kx = 0,
-                             param_lambda=c(10^seq(-3, 1, length.out = 30)),
-                             kfolds=3, solver="ADMM", LW_Sy = LW_Sy, do.scale=TRUE,
-                             rho=1, niter=2 * 1e4,
-                             thresh=1e-6)
+                  res_alt = ccar3_methods$cca_group_rrr_cv(X, Y,
+                                                           groups = gen$groups,
+                                                           r = r,
+                                                           lambdas = c(10^seq(-3, 1, length.out = 30)),
+                                                           kfolds = 3, solver = "ADMM", LW_Sy = LW_Sy, standardize = TRUE,
+                                                           rho = 1, niter = 2 * 1e4,
+                                                           thresh = 1e-6)
                 })
+                res_alt <- normalize_cv_fit(res_alt)
                 res_alt$ufinal[which(is.na( res_alt$ufinal))] <- 0
                 res_alt$vfinal[which(is.na( res_alt$vfinal))] <- 0
                 Uhat <- res_alt$ufinal[, 1:r]
@@ -264,17 +312,17 @@ for(seed_n in seeds){
                   while(sum(apply(Uhat, 1, function(x){sum(x!=0)}) >0) <r){
                     lambda_chosen = lambda_chosen / 2
                     #start_time_alt <- system.time({
-                    res_alt <- CCA_group_rrr(X, Y, 
-                                             groups = gen$groups,
-                                             Sx = NULL, Sy=NULL,
-                                       lambda =lambda_chosen, Kx=NULL, 
-                                       r=r, 
-                                       solver="ADMM",
-                                       LW_Sy = LW_Sy, do.scale=TRUE,
-                                       rho=1, niter=2 * 1e4,
-                                       thresh=1e-6)
+                    res_alt <- ccar3_methods$cca_group_rrr(X, Y,
+                                                           groups = gen$groups,
+                                                           Sx = NULL, Sy = NULL,
+                                                           lambda = lambda_chosen,
+                                                           r = r,
+                                                           solver = "ADMM",
+                                                           LW_Sy = LW_Sy, standardize = TRUE,
+                                                           rho = 1, niter = 2 * 1e4,
+                                                           thresh = 1e-6)
                     res_alt$U[which(is.na(res_alt$U))] <- 0
-                    res_alt$V[which(is.na(res_alt$v))] <- 0
+                    res_alt$V[which(is.na(res_alt$V))] <- 0
                     Uhat <- res_alt$U[, 1:r]
                     Vhat <- res_alt$V[, 1:r]
                     
@@ -352,7 +400,7 @@ for(seed_n in seeds){
                     # Skip to the next iteration
                   })
                 }
-                write_csv(result, paste0("experiments/simulations/results/group/2024-group-newest_RRR_efficient_results", name_exp, ".csv"))
+                write_results_csv(result, paste0("experiments/simulations/results/group/2024-group-newest_RRR_efficient_results", name_exp, ".csv"))
                 print("Done loop")
               
               }

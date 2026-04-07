@@ -4,7 +4,7 @@ library(MASS)
 #library(pls)
 library(CCA)
 
-source("experiments/metrics.R")
+source("/scratch/midway3/cdonnat/CCAR3_code/experiments/metrics.R")
 
 SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
                     lambdaBseq=seq(from=1, to=0.01, by=-0.01),
@@ -51,16 +51,22 @@ SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
 
   ### START CODE
 
-  # Starting Values: Canonical Ridge Solution
+  # Starting values from cross-covariance SVD (stable when ridge CCA fails)
   if(is.null(A.initial)){
-    cancor_regpar <- estim.regul_crossvalidation(X, Y, n.cv=n.cv,
-                                                 lambda1grid = lambdaAseq,
-                                                 lambda2grid = lambdaBseq)
-    cancor_regul <- CCA::rcc(X, Y, cancor_regpar$lambda1.optim, cancor_regpar$lambda2.optim)
-    A.initial_ridge <- matrix(cancor_regul$xcoef[, 1:rank], ncol=rank, nrow=ncol(X))
-    B.initial_ridge <- matrix(cancor_regul$ycoef[, 1:rank], ncol=rank, nrow=ncol(Y))
-    A.initial <- apply(A.initial_ridge, 2, NORMALIZATION_UNIT)
-    B.initial <- apply(B.initial_ridge, 2, NORMALIZATION_UNIT)
+    X_centered <- scale(X, center = TRUE, scale = FALSE)
+    Y_centered <- scale(Y, center = TRUE, scale = FALSE)
+    cross_cov <- crossprod(X_centered, Y_centered) / max(1, nrow(X) - 1)
+    sv <- svd(cross_cov)
+
+    r0 <- min(rank, ncol(sv$u), ncol(sv$v))
+    A.initial_ridge <- matrix(0, nrow = ncol(X), ncol = rank)
+    B.initial_ridge <- matrix(0, nrow = ncol(Y), ncol = rank)
+    if (r0 > 0) {
+      A.initial_ridge[, 1:r0] <- sv$u[, 1:r0, drop = FALSE]
+      B.initial_ridge[, 1:r0] <- sv$v[, 1:r0, drop = FALSE]
+    }
+    A.initial <- matrix(apply(A.initial_ridge, 2, NORMALIZATION_UNIT), nrow = ncol(X), ncol = rank)
+    B.initial <- matrix(apply(B.initial_ridge, 2, NORMALIZATION_UNIT), nrow = ncol(Y), ncol = rank)
   }
 
   # Sequentially extract the r canonical vector pairs
@@ -211,10 +217,10 @@ alternating.regression <- function(Xreg, Yreg,
   if (is.integer(which(LASSOFIT$df!=0)) && length(which(LASSOFIT$df!=0)) == 0L) {
     # Smaller lambda sequence necessary
     LASSOFIT <- glmnet(y=Yreg, x=Xreg_st, family="gaussian", intercept=T)
-    COEFhat <- matrix(LASSOFIT$beta[, which(LASSOFIT$df!=0)[1:length(lambdaseq)]], nrow=ncol(Xreg_st)) # estimated coefficients
+    COEFhat <- matrix(as.matrix(LASSOFIT$beta[, which(LASSOFIT$df!=0)[1:length(lambdaseq)], drop = FALSE]), nrow=ncol(Xreg_st)) # estimated coefficients
     LAMBDA <- LASSOFIT$lambda[which(LASSOFIT$df!=0)[1:length(lambdaseq)]] # lambda values
   } else {
-    COEFhat <- matrix(LASSOFIT$beta[, which(LASSOFIT$df!=0)], nrow=ncol(Xreg_st)) # estimated coefficients
+    COEFhat <- matrix(as.matrix(LASSOFIT$beta[, which(LASSOFIT$df!=0), drop = FALSE]), nrow=ncol(Xreg_st)) # estimated coefficients
     LAMBDA <- LASSOFIT$lambda[which(LASSOFIT$df!=0)] # lambda values
   }
 
@@ -240,7 +246,7 @@ alternating.regression <- function(Xreg, Yreg,
         Xcv = X.data[training.sample,  ]
         Ycv = Y.data[training.sample,  ]
         LASSOFIT_cv <- glmnet(y=Ycv, x=Xcv, family="gaussian", lambda=LAMBDA)
-        COEF_cv <- LASSOFIT_cv$beta
+        COEF_cv <- as.matrix(LASSOFIT_cv$beta)
         cvscore[i, ] <- apply(COEF_cv, 2, testsample.correlation, Xdata=X.data[testing.sample,  ], yscore = Y.data[testing.sample,  ] )
       }
 
@@ -269,7 +275,8 @@ NORMALIZATION_UNIT <- function(U){
 BIC <- function(U, Y.data, X.data){
   ### Calculate value of Bayesian information Criterion
 
-  NEGLOGLIK <- sum(diag((1/nrow(Y.data))*(t(Y.data-X.data%*%U)%*%(Y.data-X.data%*%U))))
+  residual <- as.matrix(Y.data - X.data %*% as.matrix(U, ncol = 1))
+  NEGLOGLIK <- sum(residual^2) / nrow(Y.data)
   BIC <- 2*NEGLOGLIK+ length(which(U!=0))*log(nrow(Y.data))
   return(BIC)
 }
@@ -329,7 +336,7 @@ estim.regul_crossvalidation <- function (X,  Y,  lambda1grid = NULL,
   lambda2.optim=lambda2.matrix[which.max(cvscores)]
 
   ##OUTPUT
-  out=list(lambda1.optim=lambda1.optim, lambda2.optim=lambda1.optim, cv.optim=cv.optim)
+  out=list(lambda1.optim=lambda1.optim, lambda2.optim=lambda2.optim, cv.optim=cv.optim)
 }
 
 l1function <- function(U, Xmatrix, Ymatrix, lambda2grid, n.cv){

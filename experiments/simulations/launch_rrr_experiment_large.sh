@@ -20,5 +20,4 @@ for theta in $theta_strengths; do
       done
     done
   done
-done
-~      
+done     

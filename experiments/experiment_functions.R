@@ -1,33 +1,64 @@
 library(MASS)
 library(stats)
-library(CVXR)
 library(geigen)
 library(pracma)
 library(tidyverse)
 library(CCA)
-library(VGAM)
-library(matlib)
 library(PMA)
 library(mvtnorm)
 library(glmnet)
 library(caret)
 
-wd = getwd()
-setwd("experiments/alternative_methods/GCA")
-source("utils.R")
-source("gca_to_cca.R")
-source("init_process.R")
-source("sgca_init.R")
-source("sgca_tgd.R")
-source("subdistance.R")
+load_optional_package <- function(pkg) {
+  if (!requireNamespace(pkg, quietly = TRUE)) {
+    message("Optional package '", pkg, "' is not installed; methods that depend on it will be skipped.")
+    return(FALSE)
+  }
 
-setwd(wd)
-source('experiments/alternative_methods/SAR.R')
-source('experiments/alternative_methods/Parkhomenko.R')
-source('experiments/alternative_methods/Witten_CrossValidation.R')
-source('experiments/alternative_methods/Waaijenborg.R')
-source('experiments/alternative_methods/scca_chao.R')
-setwd(wd)
+  suppressPackageStartupMessages(
+    library(pkg, character.only = TRUE)
+  )
+  TRUE
+}
+
+safe_source <- function(path) {
+  tryCatch(
+    source(path),
+    error = function(e) {
+      message("Skipping optional source '", path, "': ", conditionMessage(e))
+      invisible(NULL)
+    }
+  )
+}
+
+load_optional_package("CVXR")
+load_optional_package("VGAM")
+load_optional_package("matlib")
+
+source_local_methods <- function(ccar3_dir = Sys.getenv("CCAR3_PKG_PATH", unset = "/scratch/midway3/cdonnat/ccar3"),
+                                 ccar3_code_dir = getwd()) {
+  ccar3_dir <- normalizePath(ccar3_dir, winslash = "/", mustWork = TRUE)
+  ccar3_code_dir <- normalizePath(ccar3_code_dir, winslash = "/", mustWork = TRUE)
+
+  options(ccar3_pkg_path = ccar3_dir)
+  Sys.setenv(CCAR3_PKG_PATH = ccar3_dir)
+
+  safe_source(file.path(ccar3_dir, "R", "alt_SAR.R"))
+  safe_source(file.path(ccar3_dir, "R", "alt_Witten_CrossValidation.R"))
+  safe_source(file.path(ccar3_dir, "R", "alt_Parkhomenko.R"))
+
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "GCA", "utils.R"))
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "GCA", "gca_to_cca.R"))
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "GCA", "init_process.R"))
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "GCA", "sgca_init.R"))
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "GCA", "sgca_tgd.R"))
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "GCA", "subdistance.R"))
+
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "Waaijenborg.R"))
+  safe_source(file.path(ccar3_code_dir, "experiments", "alternative_methods", "scca_chao.R"))
+}
+
+source_local_methods()
 
 cv_function <- function(X, Y, 
                         kfolds=10, initu, initv,
@@ -221,8 +252,7 @@ pipeline_adaptive_lasso <- function(Data, Mask, sigma0hat, r, nu=1, Sigmax,
       
   
   }else{
-    CorrelationMatrix =  diag(1/sqrt(diag(example$S))) %*% example$S %*% diag(1/sqrt(diag(example$S)))
-     ainit= preselection(example$Data, CorrelationMatrix, p1, r, alpha)
+     ainit= preselection(Data, CorrelationMatrix, p1, r, alpha)
   }
 
   init <- gca_to_cca(ainit, S3, pp)
@@ -424,52 +454,136 @@ additional_checks <- function(X_train, Y_train, S=NULL,
                               lambdax = 10^seq(from=-3,to=2,length=100),
                               lambday = c(0, 1e-7, 1e-6, 1e-5)){
 
+  force_rank_columns <- function(M, target_rows, target_rank, label) {
+    M <- as.matrix(M)
+
+    if (nrow(M) != target_rows && ncol(M) == target_rows) {
+      M <- t(M)
+    }
+
+    if (nrow(M) != target_rows) {
+      stop(
+        paste0(
+          "Unexpected shape for ",
+          label,
+          ": got ",
+          nrow(M),
+          "x",
+          ncol(M),
+          ", expected ",
+          target_rows,
+          " rows"
+        )
+      )
+    }
+
+    if (ncol(M) < target_rank) {
+      M <- cbind(M, matrix(0, nrow = nrow(M), ncol = target_rank - ncol(M)))
+    }
+
+    if (ncol(M) > target_rank) {
+      M <- M[, 1:target_rank, drop = FALSE]
+    }
+
+    M
+  }
+
+  normalize_loading_matrix <- function(M, Sigma) {
+    M <- as.matrix(M)
+    if (ncol(M) == 0 || all(M == 0)) {
+      return(M)
+    }
+
+    active_cols <- which(colSums(M^2) > 0)
+    if (length(active_cols) == 0) {
+      return(M)
+    }
+
+    M_active <- M[, active_cols, drop = FALSE]
+    gram <- t(M_active) %*% Sigma %*% M_active
+
+    if (ncol(M_active) == 1) {
+      scale_value <- as.numeric(gram)
+      if (is.finite(scale_value) && scale_value > 0) {
+        M_active <- M_active / sqrt(scale_value)
+      }
+    } else {
+      sqrt_inv <- tryCatch(
+        pracma::sqrtm(gram)$Binv,
+        error = function(e) NULL
+      )
+
+      if (!is.null(sqrt_inv) && all(is.finite(sqrt_inv))) {
+        M_active <- M_active %*% sqrt_inv
+      } else {
+        col_scales <- sqrt(pmax(diag(gram), 0))
+        valid <- which(col_scales > 0)
+        if (length(valid) > 0) {
+          M_active[, valid] <- sweep(M_active[, valid, drop = FALSE], 2, col_scales[valid], "/")
+        }
+      }
+    }
+
+    M[, active_cols] <- M_active
+    M
+  }
+
   X_train = as.matrix(data.frame(X_train) %>% mutate_all(~replace_na(., mean(., na.rm = TRUE))))
   Y_train = as.matrix(data.frame(Y_train) %>% mutate_all(~replace_na(., mean(., na.rm = TRUE))))
   p1 <- dim(X_train)[2]
   p2 <- dim(Y_train)[2]
   p <- p1 + p2;
   n <- nrow(X_train)
-  pp <- c(p1,p2);
-  
-  if(is.null(S)){
-    S = cov(cbind(X_train, Y_train))
+  pp <- c(p1,p2)
+  if (is.null(S)) {
+    S <- cov(cbind(X_train, Y_train))
   }
+
   
   if (method.type=="FIT_SAR_BIC"){
     method<-SparseCCA(X=X_train,Y=Y_train,rank=rank,
                            lambdaAseq=lambdax,
                            lambdaBseq=lambday,
                            max.iter=100,conv=10^-2,
-                           selection.criterion=1,n.cv=5)
-    a_estimate = rbind(method$uhat, method$vhat)
+                           selection.criterion=1,n.cv=kfolds)
+    Uhat <- force_rank_columns(method$uhat, p1, rank, "method$uhat")
+    Vhat <- force_rank_columns(method$vhat, p2, rank, "method$vhat")
+    a_estimate = rbind(Uhat, Vhat)
     
   }
   if(method.type=="FIT_SAR_CV"){
     method<-SparseCCA(X=X_train,Y=Y_train,rank=rank,
                           lambdaAseq=lambdax,
                           lambdaBseq=lambday,
-                          max.iter=100,conv=10^-2, selection.criterion=2, n.cv=5)
-    a_estimate = rbind(method$uhat, method$vhat)
+                          max.iter=100,conv=10^-2, selection.criterion=2, n.cv=kfolds)
+    Uhat <- force_rank_columns(method$uhat, p1, rank, "method$uhat")
+    Vhat <- force_rank_columns(method$vhat, p2, rank, "method$vhat")
+    a_estimate = rbind(Uhat, Vhat)
     
   }
   if (method.type=="Witten_Perm"){
-    Witten_Perm <- CCA.permute(x=X_train,z=Y_train,
+    Witten_Perm <- PMA::CCA.permute(x=X_train,z=Y_train,
                                typex="standard",typez="standard", 
                                penaltyxs =lambdax[which(lambdax < 1)],
                                penaltyzs = lambday[which(lambday < 1)],
                                nperms=50)
-    method<-CCA(x=X_train, z=Y_train, typex="standard",typez="standard",K=rank,
+    method<-PMA::CCA(x=X_train, z=Y_train, typex="standard",typez="standard",K=rank,
                          penaltyx=Witten_Perm$bestpenaltyx,penaltyz=Witten_Perm$bestpenaltyz,trace=FALSE)
-    a_estimate = rbind(method$u, method$v)
+    Uhat <- force_rank_columns(method$u, p1, rank, "method$u")
+    Vhat <- force_rank_columns(method$v, p2, rank, "method$v")
+    a_estimate = rbind(Uhat, Vhat)
   }
   if(method.type=="Witten.CV"){
-    Witten_CV<-Witten.CV(X=X_train,Y=Y_train, n.cv=5,lambdax=lambdax[which(lambdax < 1)],
+    Witten_CV<-Witten.CV(X=X_train,Y=Y_train,
+                        rank=rank,
+                        n.cv=kfolds,lambdax=lambdax[which(lambdax < 1)],
                          lambday=c(lambday[which(lambday < 1)]))
-    method <-CCA(x=X_train,z=Y_train,typex="standard",typez="standard",
+    method <-PMA::CCA(x=X_train,z=Y_train,typex="standard",typez="standard",
                  K=rank,penaltyx=Witten_CV$lambdax.opt,
                  penaltyz=Witten_CV$lambday.opt,trace=FALSE)
-    a_estimate = rbind(method$u, method$v)
+    Uhat <- force_rank_columns(method$u, p1, rank, "method$u")
+    Vhat <- force_rank_columns(method$v, p2, rank, "method$v")
+    a_estimate = rbind(Uhat, Vhat)
     
   }
   if(method.type=="Waaijenborg-Author"){
@@ -477,7 +591,9 @@ additional_checks <- function(X_train, Y_train, S=NULL,
                         lambdaxseq=lambdax,
                         lambdayseq=lambday,
                         rank=rank,selection.criterion=1)
-    a_estimate = rbind(method$vhat, method$uhat)
+    Vhat <- force_rank_columns(method$vhat, p1, rank, "method$vhat")
+    Uhat <- force_rank_columns(method$uhat, p2, rank, "method$uhat")
+    a_estimate = rbind(Vhat, Uhat)
     
   }
   if(method.type=="Waaijenborg-CV"){
@@ -485,14 +601,18 @@ additional_checks <- function(X_train, Y_train, S=NULL,
                         Y=Y_train,lambdaxseq=lambdax,
                         lambdayseq=lambday,
                         rank=rank, selection.criterion=2)
-    a_estimate = rbind(method$vhat, method$uhat)
+    Vhat <- force_rank_columns(method$vhat, p1, rank, "method$vhat")
+    Uhat <- force_rank_columns(method$uhat, p2, rank, "method$uhat")
+    a_estimate = rbind(Vhat, Uhat)
     
   }
   if(method.type=="SCCA_Parkhomenko"){
     method<- SCCA_Parkhomenko(x.data=X_train, y.data=Y_train, Krank=rank,
                               lambda.v.seq = lambdax[which(lambdax < 2)],
                               lambda.u.seq = lambday[which(lambday < 2)])
-    a_estimate = rbind(method$uhat, method$vhat)
+    Uhat <- force_rank_columns(method$uhat, p1, rank, "method$uhat")
+    Vhat <- force_rank_columns(method$vhat, p2, rank, "method$vhat")
+    a_estimate = rbind(Uhat, Vhat)
     
   }
   if(method.type=="Canonical Ridge-Author"){
@@ -500,13 +620,17 @@ additional_checks <- function(X_train, Y_train, S=NULL,
                                         lambda1grid=lambdax[which(lambdax < 1)],
                                         lambda2grid=lambday[which(lambdax < 1)])
     method<-rcc(X_train,Y_train, RCC_cv$lambda1.optim, RCC_cv$lambda2.optim)
-    a_estimate = rbind(method$xcoef[,1:rank], method$ycoef[,1:rank])
+    Uhat <- force_rank_columns(method$xcoef, p1, rank, "method$xcoef")
+    Vhat <- force_rank_columns(method$ycoef, p2, rank, "method$ycoef")
+    a_estimate = rbind(Uhat, Vhat)
     
     
   }
   if(method.type=="Fantope"){
     afant <- Fantope(X_train, Y_train, r = rank)
-    a_estimate = rbind(afant$u[,1:rank], afant$v[,1:rank])
+    Uhat <- force_rank_columns(afant$u, p1, rank, "afant$u")
+    Vhat <- force_rank_columns(afant$v, p2, rank, "afant$v")
+    a_estimate = rbind(Uhat, Vhat)
   }
   if(method.type=="Chao"){
     a_estimate1 = scca_chao(X_train, Y_train, 
@@ -514,7 +638,9 @@ additional_checks <- function(X_train, Y_train, S=NULL,
                                 lambda_max = .1, num_lambda = 20, r = rank, niter = 500,
                                 nfold = 8, thresh = .01)
     
-    a_estimate = rbind(a_estimate1$u[,1:rank], a_estimate1$v[,1:rank])
+    Uhat <- force_rank_columns(a_estimate1$u, p1, rank, "a_estimate1$u")
+    Vhat <- force_rank_columns(a_estimate1$v, p2, rank, "a_estimate1$v")
+    a_estimate = rbind(Uhat, Vhat)
   }
   if(method.type=="SGCA"){
     idx1 <- 1:p1
@@ -524,7 +650,7 @@ additional_checks <- function(X_train, Y_train, S=NULL,
     Mask[idx2, idx2] <- matrix(1, p2, p2)
     sigma0hat <- S * Mask
     
-    ag <- sgca_init(A=S, B=sigma0hat, rho=0.5 * sqrt(log( p + q)/n),
+    ag <- sgca_init(A=S, B=sigma0hat, rho=0.5 * sqrt(log(p + p2)/n),
                     K=rank,  maxiter=1000, trace=FALSE)
     ainit <- init_process(ag$Pi, rank) 
     a_estimate <- sgca_tgd(A=S, B=sigma0hat,rank,ainit,k=20,lambda = 0.01, eta=0.00025,convergence=1e-6,maxiter=12000, plot = TRUE)
@@ -532,7 +658,16 @@ additional_checks <- function(X_train, Y_train, S=NULL,
     
     
   }
-  a_estimate <- gca_to_cca(a_estimate, S, pp)
-  return(a_estimate)
-}
+  if (!(exists("Uhat") && exists("Vhat"))) {
+    a_estimate <- gca_to_cca(a_estimate, S, pp)
+    Uhat <- force_rank_columns(a_estimate$u, p1, rank, "a_estimate$u")
+    Vhat <- force_rank_columns(a_estimate$v, p2, rank, "a_estimate$v")
+  }
 
+  Sigmax <- cov(X_train)
+  Sigmay <- cov(Y_train)
+  Uhat <- normalize_loading_matrix(Uhat, Sigmax)
+  Vhat <- normalize_loading_matrix(Vhat, Sigmay)
+
+  return(list(u = Uhat, v = Vhat))
+}
