@@ -6,7 +6,7 @@ library(pracma)
 library(tidyverse)
 library(CCA)
 library(VGAM)
-library(matlib)
+#library(matlib)
 library(PMA)
 library(mvtnorm)
 library(glmnet)
@@ -464,8 +464,10 @@ additional_checks <- function(X_train, Y_train, S=NULL,
     a_estimate = rbind(method$u, method$v)
   }
   if(method.type=="Witten.CV"){
-    Witten_CV<-Witten.CV(X=X_train,Y=Y_train, n.cv=5,lambdax=lambdax[which(lambdax < 1)],
-                         lambday=c(lambday[which(lambday < 1)]))
+    Witten_CV<-Witten.CV(X=X_train,Y=Y_train, n.cv=5, rank=rank,
+                         lambdax=lambdax[which(lambdax < 1)],
+                         lambday=c(lambday[which(lambday < 1)]),
+                         standardize = FALSE)
     method <-CCA(x=X_train,z=Y_train,typex="standard",typez="standard",
                  K=rank,penaltyx=Witten_CV$lambdax.opt,
                  penaltyz=Witten_CV$lambday.opt,trace=FALSE)
@@ -524,7 +526,7 @@ additional_checks <- function(X_train, Y_train, S=NULL,
     Mask[idx2, idx2] <- matrix(1, p2, p2)
     sigma0hat <- S * Mask
     
-    ag <- sgca_init(A=S, B=sigma0hat, rho=0.5 * sqrt(log( p + q)/n),
+    ag <- sgca_init(A=S, B=sigma0hat, rho=0.5 * sqrt(log( p1 + p2)/n),
                     K=rank,  maxiter=1000, trace=FALSE)
     ainit <- init_process(ag$Pi, rank) 
     a_estimate <- sgca_tgd(A=S, B=sigma0hat,rank,ainit,k=20,lambda = 0.01, eta=0.00025,convergence=1e-6,maxiter=12000, plot = TRUE)
@@ -535,4 +537,3 @@ additional_checks <- function(X_train, Y_train, S=NULL,
   a_estimate <- gca_to_cca(a_estimate, S, pp)
   return(a_estimate)
 }
-

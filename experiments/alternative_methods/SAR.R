@@ -8,6 +8,7 @@ source("experiments/metrics.R")
 
 SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
                     lambdaBseq=seq(from=1, to=0.01, by=-0.01),
+                    standardize = FALSE,
                     rank, selection.criterion=1, n.cv=5, A.initial=NULL,
                     B.initial=NULL, max.iter=20, conv=10^-2){
   ### Function to perform Sparse Canonical Correlation Analysis using alternating regressions
@@ -88,6 +89,7 @@ SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
 
       # Estimating A conditional on B
       FIT.A <- alternating.regression(Xreg=X_data, Yreg=Y_data%*%B.STARTING,
+                                    standardize=standardize,
                                     lambdaseq=lambdaAseq,
                                     selection.criterion=selection.criterion,
                                     n.cv=n.cv)
@@ -97,6 +99,7 @@ SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
       # Estimating B conditional on A
       FIT.B <- alternating.regression(Xreg=Y_data,
                                     Yreg=X_data%*%AHAT_FINAL,
+                                    standardize=standardize,
                                     lambdaseq=lambdaBseq,
                                     selection.criterion=selection.criterion,
                                     n.cv=n.cv)
@@ -146,13 +149,14 @@ SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
 
       # A expressed in terms of original data set X
       FIT.Aorig <- alternating.regression(Yreg=Uhat, Xreg=X, lambdaseq=lambdaAseq,
+                                        standardize=standardize,
                                         selection.criterion=selection.criterion,
                                         n.cv=n.cv)
       ALPHAhat <- FIT.Aorig$COEF_FINAL
       lambdaA_FINAL <- FIT.Aorig$LAMBDA_FINAL
 
       # B expressed in terms of original data set Y
-      FIT.Borig <- alternating.regression(Yreg=Vhat, Xreg=Y,
+      FIT.Borig <- alternating.regression(Yreg=Vhat, Xreg=Y,standardize=standardize,
                                         lambdaseq=lambdaBseq,
                                         selection.criterion=selection.criterion,
                                         n.cv=n.cv)
@@ -182,7 +186,7 @@ SparseCCA <- function(X, Y, lambdaAseq=seq(from=1, to=0.01, by=-0.01),
 
 
 
-alternating.regression <- function(Xreg, Yreg,
+alternating.regression <- function(Xreg, Yreg,standardize=FALSE,
                                  lambdaseq=seq(from=1, to=0.01, by=-0.01),
                                  selection.criterion=1, n.cv=5){
   ### Function to perform sparse alternating regression
@@ -199,12 +203,16 @@ alternating.regression <- function(Xreg, Yreg,
   #LAMBDA_FINAL       : optimal sparsity parameter
 
 
+  Xreg <- as.matrix(Xreg)
+
   ##Standardize
-  Xreg_st <- matrix(stdize(Xreg), ncol=ncol(Xreg))
-  for (i.variable in 1:ncol(Xreg)){
-    if (is.na(apply(Xreg_st, 2, sum)[i.variable])==T) {
-      Xreg_st[, i.variable] <- 0}
+  if (standardize) {
+    Xreg_st <- scale(Xreg, center = TRUE, scale = TRUE)
+    Xreg_st[!is.finite(Xreg_st)] <- 0
+  } else {
+    Xreg_st <- Xreg
   }
+
 
   ##LASSO FIT
   LASSOFIT <- glmnet(y=Yreg, x=Xreg_st, family="gaussian", lambda=lambdaseq, intercept=T)
@@ -222,7 +230,11 @@ alternating.regression <- function(Xreg, Yreg,
   if (selection.criterion==1){ #BIC
     BICvalues <- apply(COEFhat, 2, BIC, Y.data=Yreg, X.data=Xreg_st) # BIC
     COEF_FINAL <- matrix(COEFhat[, which.min(BICvalues)], ncol=1) # Final coefficient estimates
-    COEF_FINAL[which(apply(Xreg, 2, sd)!=0), ] <- COEF_FINAL[which(apply(Xreg, 2, sd)!=0), ]/apply(Xreg, 2, sd)[which(apply(Xreg, 2, sd)!=0)]
+    if (standardize) {
+      x_sd <- apply(Xreg, 2, sd)
+      keep <- which(is.finite(x_sd) & x_sd != 0)
+      COEF_FINAL[keep, ] <- COEF_FINAL[keep, ]/x_sd[keep]
+    }
     COEF_FINAL <- apply(COEF_FINAL, 2, NORMALIZATION_UNIT)
     LAMBDA_FINAL <- LAMBDA[which.min(BICvalues)]
 
@@ -246,7 +258,11 @@ alternating.regression <- function(Xreg, Yreg,
 
       CVscore.mean <- apply(cvscore, 2, mean) # cv score
       COEF_FINAL <- matrix(COEFhat[, which.max(CVscore.mean)], ncol=1) # Final coefficient estimates
-      COEF_FINAL[which(apply(Xreg, 2, sd)!=0), ] <- COEF_FINAL[which(apply(Xreg, 2, sd)!=0), ]/apply(Xreg, 2, sd)[which(apply(Xreg, 2, sd)!=0)]
+      if (standardize) {
+        x_sd <- apply(Xreg, 2, sd)
+        keep <- which(is.finite(x_sd) & x_sd != 0)
+        COEF_FINAL[keep, ] <- COEF_FINAL[keep, ]/x_sd[keep]
+      }
       COEF_FINAL <- apply(COEF_FINAL, 2, NORMALIZATION_UNIT)
       LAMBDA_FINAL <- LAMBDA[which.max(CVscore.mean)]
     } else {

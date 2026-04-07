@@ -20,6 +20,13 @@ source('experiments/alternative_methods/Witten_CrossValidation.R')
 source('experiments/alternative_methods/Waaijenborg.R')
 source('experiments/alternative_methods/scca_chao.R')
 
+source("~/Documents/ccar3/R/helpers.r")
+source("~/Documents/ccar3/R/globals.R")
+source("~/Documents/ccar3/R/utils.R")
+source("~/Documents/ccar3/R/graph_utils.R")
+source("~/Documents/ccar3/R/reduced_rank_regression.R")
+source("~/Documents/ccar3/R/graph_reduced_rank_regression.R")
+
 
 
 #Load X and Y from nutrimouse data
@@ -47,7 +54,7 @@ lambda_Kx = NULL
 param_lambda=c(10^seq(-3, 3, length.out = 100))
 kfolds=5
 penalty="l21"
-solver="rrr"
+solver="admm"
 LW_Sy = TRUE
 
 ### Let's do a cross validation setting
@@ -65,16 +72,16 @@ for (exp in 1:nb_experiments){
     index2 =order[ifelse(i < length(folds) -1, i + 2, (i+2)%%length(folds))]
     print(c(i, index, index2))
     for (lambda in 10^seq(from=-3, 0, length.out=20)){
-      final = CCA_rrr(as.matrix(X)[-c(folds[[index]], folds[[index2]]),], 
-                            as.matrix(Y)[-c(folds[[index]],
-                                                        folds[[index2]]),],  
-                            lambda = lambda, 
-                            Kx=NULL, r=r,
-                            rho=1, niter=2 * 1e4,
-                            do.scale = FALSE, lambda_Kx=0,
-                            thresh=1e-6,
-                            solver= "ADMM",
-                            LW_Sy = LW_Sy)
+      final = cca_rrr(as.matrix(X)[-c(folds[[index]], folds[[index2]]),], 
+                      as.matrix(Y)[-c(folds[[index]],
+                                      folds[[index2]]),],  
+                      lambda = lambda, 
+                      r=r,
+                      rho=1, niter=2 * 1e4,
+                      preprocess=FALSE, 
+                      thresh=1e-6,
+                      solver= "ADMM",
+                      LW_Sy = LW_Sy)
       
       correlation <- rbind(
         correlation,
@@ -83,27 +90,27 @@ for (exp in 1:nb_experiments){
           exp,
           i,
           diag(cov(as.matrix(X)[-c(folds[[index]],
-                                               folds[[index2]]),] %*% final$U,
+                                   folds[[index2]]),] %*% final$U,
                    as.matrix(Y)[-c(folds[[index]],
-                                               folds[[index2]]),] %*%  final$V)),
+                                   folds[[index2]]),] %*%  final$V)),
           apply(((as.matrix(X)[-c(folds[[index]],
-                                              folds[[index2]]),] %*% final$U) -
+                                  folds[[index2]]),] %*% final$U) -
                    (as.matrix(Y)[-c(folds[[index]],
-                                                folds[[index2]]),] %*%  final$V))^2, 2, mean),
+                                    folds[[index2]]),] %*%  final$V))^2, 2, mean),
           diag(t(as.matrix(X)[folds[[index]],] %*% final$U) %*%
                  (as.matrix(Y)[folds[[index]],] %*%  final$V)),
           diag(cor(as.matrix(X)[folds[[index]],] %*% final$U, (as.matrix(Y)[folds[[index]],] %*%  final$V))),
           apply(((as.matrix(X)[folds[[index]],] %*% final$U) -
                    (as.matrix(Y)[folds[[index]],] %*%  final$V))^2,2,mean),
           subdistance(as.matrix(X)[folds[[index]],] %*% final$U,
-                        as.matrix(Y)[folds[[index]],] %*%  final$V),
+                      as.matrix(Y)[folds[[index]],] %*%  final$V),
           diag(t(as.matrix(X)[folds[[index2]],] %*% final$U) %*%
                  (as.matrix(Y)[folds[[index2]],] %*%  final$V)),
           diag(cor(as.matrix(X)[folds[[index2]],] %*% final$U, (as.matrix(Y)[folds[[index2]],] %*%  final$V))),
           apply(((as.matrix(X)[folds[[index2]],] %*% final$U) -
                    (as.matrix(Y)[folds[[index2]],] %*%  final$V))^2,2,mean),
           subdistance(as.matrix(X)[folds[[index2]],] %*% final$U, 
-                        as.matrix(Y)[folds[[index2]],] %*%  final$V)
+                      as.matrix(Y)[folds[[index2]],] %*%  final$V)
         ))
       
     }
@@ -211,7 +218,7 @@ summ1  = correlation_df %>%
   ungroup() 
 
 
-  #drop_na()
+#drop_na()
 
 ggplot(summ1,
        aes(x=method, y=val_mse )) +
@@ -220,12 +227,12 @@ ggplot(summ1,
 summary_correlation = summ1 %>%
   group_by(method) %>%
   summarise(counts =c(),
-           test_cor= median(test_cor),
-           test_mse = median(test_mse),
-           test_dist = median(test_dist),
-      val_cor= mean(val_cor),
-           val_mse = mean(val_mse),
-           val_dist = mean(val_dist))%>%
+            test_cor= median(test_cor),
+            test_mse = median(test_mse),
+            test_dist = median(test_dist),
+            val_cor= mean(val_cor),
+            val_mse = mean(val_mse),
+            val_dist = mean(val_dist))%>%
   arrange((val_mse)) %>% ungroup()
 
 correlation_df$exp
@@ -291,7 +298,7 @@ df["gen"] = gen
 
 
 set.seed(107)
- inTrain <- createDataPartition(
+inTrain <- createDataPartition(
   y = df$diet,
   ## the outcome data are needed
   p = .75,
@@ -403,7 +410,7 @@ ggplot(df, aes(x=X1, y=X2 ,colour=diet))+
   aes(x=x, y=y, colour="coc")) +
   guides(colour = guide_legend(override.aes = list(linetype = c("solid", "solid", "solid", 
                                                                 "solid", "solid"
-                                                          )))) +
+  )))) +
   xlab("CD-1") + 
   ylab("CD-2")+
   labs(colour = "Diet", shape = "Genotype")+
@@ -857,4 +864,3 @@ ggplot(df_U %>% filter(abs(value) > 1e-1), aes(x = value, y = reorder(`Gene`, va
   geom_vline(xintercept = 0, linetype = "dashed") +
   labs(y = "Gene", x = "Loading Value") + 
   labs(fill = "Canonical\nDirection")
-

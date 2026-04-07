@@ -1,5 +1,8 @@
 gca_to_cca <-
   function(a_estimate, S, pp){
+    if (is.null(dim(a_estimate))) {
+      a_estimate <- matrix(a_estimate, ncol = 1)
+    }
     p1 = pp[1];
     p2 = pp[2];
     p = p1 + p2;
