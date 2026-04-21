@@ -3,9 +3,9 @@
 #SBATCH --job-name=array
 #SBATCH --output=logs/rr_array_%A_%a.out
 #SBATCH --error=logs/rr_array_%A_%a.err
-#SBATCH --array=1-20
+#SBATCH --array=1-10
 #SBATCH --time=20:00:00
-#SBATCH --partition=caslake
+#SBATCH --partition=cdonnat
 #SBATCH --mem=10G
 #SBATCH --account=pi-cdonnat
 
@@ -14,6 +14,7 @@ echo "My SLURM_ARRAY_TASK_ID: " $SLURM_ARRAY_TASK_ID
 echo "My SLURM_ARRAY_JOB_ID: " $SLURM_ARRAY_JOB_ID
 # Add lines here to run your computations
 job_id=$SLURM_ARRAY_JOB_ID
+module load gcc
 module load R/4.2.0
 
 

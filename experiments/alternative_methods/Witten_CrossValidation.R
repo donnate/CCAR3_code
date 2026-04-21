@@ -12,10 +12,10 @@
 #' @export
 
 Witten.CV<-function(X,Y,n.cv=5,
-                    rank=1,
+                    rank,
                     lambdax=matrix(seq(from=0,to=1,by=0.1),nrow=1),
                     lambday=matrix(seq(from=0,to=1,by=0.1),nrow=1),
-                    standardize = FALSE){
+                    standardize = TRUE){ 
 
 
   n = nrow(X)
@@ -24,6 +24,14 @@ Witten.CV<-function(X,Y,n.cv=5,
   lambdax=matrix(lambdax,nrow=1)
   lambday=matrix(lambday,nrow=1)
 
+  if (standardize){
+    X = scale(X, center = TRUE, scale=TRUE)
+    Y = scale(Y, center = TRUE, scale=TRUE)
+  }else{
+    X = scale(X, center = TRUE, scale=FALSE)
+    Y = scale(Y, center = TRUE, scale=FALSE)
+  }
+  
   cvscore<-array(NA,c(length(lambday),length(lambdax),n.cv)) #lambdax in columns, lambday in rows
 
 
@@ -64,30 +72,12 @@ Witten.CV<-function(X,Y,n.cv=5,
   lambdax.opt<-LAMBDAX[which.max(cvscore.vec)]
   lambday.opt<-LAMBDAY[which.max(cvscore.vec)]
 
-  X_fit <- as.matrix(X)
-  Y_fit <- as.matrix(Y)
-  if (standardize){
-    X_fit <- scale(X_fit, center = TRUE, scale = TRUE)
-    Y_fit <- scale(Y_fit, center = TRUE, scale = TRUE)
-  }
+  ### OUTPUT
+  out<-list(lambdax.opt=lambdax.opt,lambday.opt=lambday.opt)
+  Fit.Witten<-PMA::CCA(x=X,z=Y,
+                       typex="standard",typez="standard",K=r,penaltyx=lambdax.opt,penaltyz=lambday.opt,
+                       trace=F)
 
-  fit.witten <- PMA::CCA(
-    x = X_fit,
-    z = Y_fit,
-    typex = "standard",
-    typez = "standard",
-    K = rank,
-    penaltyx = lambdax.opt,
-    penaltyz = lambday.opt,
-    trace = FALSE
-  )
-
-  list(
-    lambdax.opt = lambdax.opt,
-    lambday.opt = lambday.opt,
-    fit = fit.witten,
-    cvscore = cvscore
-  )
 }
 
 
@@ -100,9 +90,5 @@ Witten.cv.lambday<-function(V,Xtrain,Ytrain,Xtest,Ytest,
                             lambdaxfixed, r=1){ #AUXILIARY FUNCTION
   #print(lambdaxfixed)
   Fit.Witten<-PMA::CCA(x=Xtrain,z=Ytrain,typex="standard",typez="standard",K=r,penaltyx=lambdaxfixed,penaltyz=V,trace=F)
-  test_cor <- suppressWarnings(cor(Xtest %*% Fit.Witten$u, Ytest %*% Fit.Witten$v))
-  if (is.null(dim(test_cor))) {
-    return(abs(test_cor[[1]]))
-  }
-  return(sum(diag(abs(test_cor))))
-}
+  return(sum(diag(abs(cor(Xtest%*%Fit.Witten$u, Ytest%*%Fit.Witten$v)))))
+}  

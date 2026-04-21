@@ -49,6 +49,31 @@ scale_matrix <- function(mat) {
   out
 }
 
+safe_mean <- function(x) {
+  out <- mean(x, na.rm = TRUE)
+  if (is.nan(out)) {
+    return(NA_real_)
+  }
+  out
+}
+
+make_folds <- function(indices, k, seed = NULL) {
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+
+  shuffled <- sample(indices, length(indices), replace = FALSE)
+  split(shuffled, cut(seq_along(shuffled), breaks = k, labels = FALSE))
+}
+
+diag_cor_values <- function(A, B) {
+  cor_mat <- suppressWarnings(stats::cor(A, B))
+  if (is.null(dim(cor_mat))) {
+    return(abs(as.numeric(cor_mat)))
+  }
+  diag(cor_mat)
+}
+
 load_nutrimouse_data <- function() {
   if (!requireNamespace("mixOmics", quietly = TRUE)) {
     stop("Package 'mixOmics' is required for the nutrimouse dataset.", call. = FALSE)
@@ -87,6 +112,127 @@ prepare_full_nutrimouse_data <- function(data_obj) {
     Y_full = scale_matrix(Y_raw),
     metadata = data_obj$metadata
   )
+}
+
+resolve_test_correlation_dir <- function(benchmark_dir) {
+  override_dir <- env_or_default("CCAR3_NUTRIMOUSE_TEST_COR_DIR", "")
+  candidate_dirs <- c(
+    if (nzchar(override_dir)) override_dir else character(0),
+    benchmark_dir,
+    paste0(benchmark_dir, "_cv"),
+    paste0(benchmark_dir, "_1"),
+    paste0(benchmark_dir, "_scaled_with_fantope")
+  )
+
+  for (candidate in unique(candidate_dirs)) {
+    if (!nzchar(candidate)) {
+      next
+    }
+    if (file.exists(file.path(candidate, "benchmark_runs.csv")) &&
+        dir.exists(file.path(candidate, "benchmark_details"))) {
+      return(candidate)
+    }
+  }
+
+  NULL
+}
+
+load_test_component_correlations <- function(benchmark_dir, X_raw, Y_raw, methods = NULL, seed = 123L) {
+  if (is.null(benchmark_dir)) {
+    return(NULL)
+  }
+
+  benchmark_runs_path <- file.path(benchmark_dir, "benchmark_runs.csv")
+  benchmark_details_dir <- file.path(benchmark_dir, "benchmark_details")
+  if (!file.exists(benchmark_runs_path) || !dir.exists(benchmark_details_dir)) {
+    return(NULL)
+  }
+
+  benchmark_runs <- utils::read.csv(benchmark_runs_path, stringsAsFactors = FALSE)
+  if (!is.null(methods)) {
+    benchmark_runs <- benchmark_runs[benchmark_runs$method %in% methods, , drop = FALSE]
+  }
+  if ("timed_out" %in% names(benchmark_runs)) {
+    timed_out <- benchmark_runs$timed_out
+    if (is.character(timed_out)) {
+      timed_out <- tolower(trimws(timed_out)) %in% c("true", "t", "1")
+    }
+    benchmark_runs <- benchmark_runs[!timed_out, , drop = FALSE]
+  }
+
+  outer_folds <- length(unique(stats::na.omit(benchmark_runs$fold_id)))
+  if (outer_folds == 0 || nrow(benchmark_runs) == 0) {
+    return(NULL)
+  }
+
+  fold_cache <- new.env(parent = emptyenv())
+  get_repeat_folds <- function(repeat_id) {
+    key <- as.character(repeat_id)
+    if (!exists(key, envir = fold_cache, inherits = FALSE)) {
+      assign(
+        key,
+        make_folds(seq_len(nrow(X_raw)), k = outer_folds, seed = seed + repeat_id),
+        envir = fold_cache
+      )
+    }
+    get(key, envir = fold_cache, inherits = FALSE)
+  }
+
+  component_rows <- lapply(seq_len(nrow(benchmark_runs)), function(i) {
+    run_row <- benchmark_runs[i, , drop = FALSE]
+    detail_path <- file.path(
+      benchmark_details_dir,
+      sprintf("repeat_%02d_fold_%02d_%s.rds", run_row$repeat_id, run_row$fold_id, run_row$method)
+    )
+    if (!file.exists(detail_path)) {
+      return(NULL)
+    }
+
+    artifact <- readRDS(detail_path)
+    U <- artifact$result$U %||% NULL
+    V <- artifact$result$V %||% NULL
+    if (is.null(U) || is.null(V)) {
+      return(NULL)
+    }
+
+    folds <- get_repeat_folds(artifact$repeat_id)
+    test_idx <- folds[[artifact$fold_id]]
+    if (length(test_idx) == 0) {
+      return(NULL)
+    }
+
+    component_cor <- diag_cor_values(
+      X_raw[test_idx, , drop = FALSE] %*% as.matrix(U),
+      Y_raw[test_idx, , drop = FALSE] %*% as.matrix(V)
+    )
+    component_cor <- component_cor[seq_len(min(5L, length(component_cor)))]
+    names(component_cor) <- paste0("cor_", seq_along(component_cor))
+
+    data.frame(
+      method = artifact$method,
+      as.list(component_cor),
+      stringsAsFactors = FALSE
+    )
+  })
+
+  component_df <- dplyr::bind_rows(component_rows)
+  if (nrow(component_df) == 0) {
+    return(NULL)
+  }
+
+  component_names <- intersect(paste0("cor_", 1:5), names(component_df))
+  if (length(component_names) == 0) {
+    return(NULL)
+  }
+
+  summary_df <- component_df %>%
+    dplyr::group_by(method) %>%
+    dplyr::summarise(
+      dplyr::across(dplyr::all_of(component_names), safe_mean),
+      .groups = "drop"
+    )
+
+  summary_df
 }
 
 sanitize_file_stub <- function(x) {
@@ -213,25 +359,70 @@ build_projection_df <- function(U, V, X, Y, metadata, x_scores = NULL, y_scores 
   df
 }
 
-canonical_axis_label <- function(score_prefix, component_idx) {
-  as.expression(bquote(.(as.name(score_prefix))[.(component_idx)]))
+canonical_axis_label <- function(score_prefix, component_idx, cor_value = NULL, cor_source = NULL) {
+  axis_name <- as.name(score_prefix)
+  if (is.null(cor_value) || length(cor_value) == 0 || !is.finite(cor_value)) {
+    return(as.expression(bquote(.(axis_name)[.(component_idx)])))
+  }
+  rounded_cor <- round(cor_value, 2)
+
+  if (identical(cor_source, "test")) {
+    return(as.expression(bquote(atop(.(axis_name)[.(component_idx)], hat(rho)[test] == .(rounded_cor)))))
+  }
+
+  if (identical(cor_source, "full")) {
+    return(as.expression(bquote(atop(.(axis_name)[.(component_idx)], hat(rho)[full] == .(rounded_cor)))))
+  }
+
+  as.expression(bquote(atop(.(axis_name)[.(component_idx)], hat(rho) == .(rounded_cor))))
 }
 
-plot_embedding_pair <- function(df, x_col, y_col, out_file, method_name, legend_order, colors, labels_n) {
+extract_method_component_correlations <- function(method, context) {
+  component_names <- paste0("cor_", 1:5)
+
+  if (!is.null(context$test_component_cor)) {
+    test_row <- context$test_component_cor[context$test_component_cor$method == method, , drop = FALSE]
+    available_names <- intersect(component_names, names(test_row))
+    if (nrow(test_row) > 0 && length(available_names) > 0) {
+      values <- rep(NA_real_, length(component_names))
+      names(values) <- component_names
+      values[available_names] <- as.numeric(test_row[1, available_names, drop = TRUE])
+      return(list(values = values, source = "test"))
+    }
+  }
+
+  if (!is.null(context$full_fit_summary)) {
+    full_row <- context$full_fit_summary[context$full_fit_summary$method == method, , drop = FALSE]
+    available_names <- intersect(component_names, names(full_row))
+    if (nrow(full_row) > 0 && length(available_names) > 0) {
+      values <- rep(NA_real_, length(component_names))
+      names(values) <- component_names
+      values[available_names] <- as.numeric(full_row[1, available_names, drop = TRUE])
+      return(list(values = values, source = "full"))
+    }
+  }
+
+  list(values = stats::setNames(rep(NA_real_, length(component_names)), component_names), source = NULL)
+}
+
+plot_embedding_pair <- function(df, x_col, y_col, out_file, method_name, legend_order, colors, labels_n,
+                                component_cor = NULL, cor_source = NULL) {
   if (!all(c(x_col, y_col) %in% names(df))) {
     return(invisible(NULL))
   }
 
   x_idx <- as.integer(sub("^XU", "", x_col))
   y_idx <- as.integer(sub("^XU", "", y_col))
+  x_cor <- component_cor[[paste0("cor_", x_idx)]] %||% NA_real_
+  y_cor <- component_cor[[paste0("cor_", y_idx)]] %||% NA_real_
 
   p <- ggplot(df, aes(x = .data[[x_col]], y = .data[[y_col]], colour = diet)) +
     geom_point(aes(shape = genotype), size = 4) +
     scale_color_manual(values = colors, breaks = legend_order, labels = labels_n) +
     scale_fill_manual(values = colors, breaks = legend_order, labels = labels_n) +
     stat_ellipse(level = 0.95) +
-    xlab(canonical_axis_label("Xu", x_idx)) +
-    ylab(canonical_axis_label("Xu", y_idx)) +
+    xlab(canonical_axis_label("Xu", x_idx, cor_value = x_cor, cor_source = cor_source)) +
+    ylab(canonical_axis_label("Xu", y_idx, cor_value = y_cor, cor_source = cor_source)) +
     labs(title = method_name, colour = "Diet", shape = "Genotype") +
     theme(legend.position = "none")
 
@@ -326,6 +517,7 @@ plot_saved_method <- function(method, context = plot_context) {
 
   file_stub <- sanitize_file_stub(method)
   display_name <- method_label(method)
+  method_component_cor <- extract_method_component_correlations(method, context)
   saved_x_scores <- fit$x_scores %||% NULL
   if (is.null(saved_x_scores) && !is.null(fit$diet$embedding)) {
     saved_x_scores <- sqrt(nrow(context$X)) * fit$diet$embedding
@@ -361,7 +553,9 @@ plot_saved_method <- function(method, context = plot_context) {
     display_name,
     legend_order,
     colors,
-    labels_n
+    labels_n,
+    component_cor = method_component_cor$values,
+    cor_source = method_component_cor$source
   )
   plot_embedding_pair(
     plot_df,
@@ -371,7 +565,9 @@ plot_saved_method <- function(method, context = plot_context) {
     display_name,
     legend_order,
     colors,
-    labels_n
+    labels_n,
+    component_cor = method_component_cor$values,
+    cor_source = method_component_cor$source
   )
   plot_embedding_pair(
     plot_df,
@@ -381,7 +577,9 @@ plot_saved_method <- function(method, context = plot_context) {
     display_name,
     legend_order,
     colors,
-    labels_n
+    labels_n,
+    component_cor = method_component_cor$values,
+    cor_source = method_component_cor$source
   )
   plot_loading_bars(
     fit$U,
@@ -453,6 +651,14 @@ main <- function() {
 
   saved <- load_saved_full_fits(benchmark_dir)
   requested_methods <- resolve_requested_methods(names(saved$artifacts))
+  test_cor_dir <- resolve_test_correlation_dir(benchmark_dir)
+  test_component_cor <- load_test_component_correlations(
+    benchmark_dir = test_cor_dir,
+    X_raw = full_data$X_raw,
+    Y_raw = full_data$Y_raw,
+    methods = requested_methods,
+    seed = as.integer(env_or_default("CCAR3_NUTRIMOUSE_SEED", "123"))
+  )
 
   context <- list(
     project_root = project_root,
@@ -464,7 +670,9 @@ main <- function() {
     gene_names = data_obj$gene_names,
     lipid_names = data_obj$lipid_names,
     full_fit_artifacts = saved$artifacts,
-    full_fit_summary = saved$summary
+    full_fit_summary = saved$summary,
+    test_component_cor = test_component_cor,
+    test_cor_dir = test_cor_dir
   )
 
   for (method in requested_methods) {

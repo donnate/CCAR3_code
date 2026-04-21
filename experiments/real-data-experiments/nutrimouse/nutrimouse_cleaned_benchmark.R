@@ -59,7 +59,7 @@ params <- list(
     "experiments",
     "real-data-experiments",
     "nutrimouse",
-    "nutrimouse_benchmark_all_methods"
+    "nutrimouse_benchmark_all_methods_fresh"
   ),
   rank = as.integer(Sys.getenv("CCAR3_NUTRIMOUSE_RANK", unset = "5")),
   repeats = as.integer(Sys.getenv("CCAR3_NUTRIMOUSE_REPEATS", unset = "5")),
@@ -1457,150 +1457,150 @@ main <- function() {
   # 3. Score the fitted canonical variates on the held-out outer fold.
   # 4. Track held-out genotype clustering on the fitted XU embedding.
   # 5. Aggregate the selected parameters, then refit each method on all samples.
-  # for (repeat_id in seq_len(params$repeats)) {
-  #   set.seed(params$seed + repeat_id)
-  #   folds <- make_folds(seq_len(nrow(X_raw)), k = params$outer_folds)
-  # 
-  #   for (fold_id in seq_along(folds)) {
-  #     test_idx <- folds[[fold_id]]
-  #     test_metadata <- metadata[test_idx, , drop = FALSE]
-  # 
-  #     #X_scaled <- scale_train_test(X_raw[-test_idx, , drop = FALSE], X_raw[test_idx, , drop = FALSE])
-  #     #Y_scaled <- scale_train_test(Y_raw[-test_idx, , drop = FALSE], Y_raw[test_idx, , drop = FALSE])
-  # 
-  #     #X_train <- X_scaled$train
-  #     #X_test <- X_scaled$test
-  #     #Y_train <- Y_scaled$train
-  #     #Y_test <- Y_scaled$test
-  #     X_train <- X_raw[-test_idx, , drop = FALSE]
-  #     X_test <- X_raw[test_idx, , drop = FALSE]
-  #     Y_train <- Y_raw[-test_idx, , drop = FALSE]
-  #     Y_test <- Y_raw[test_idx, , drop = FALSE]
-  # 
-  #     for (method in params$methods) {
-  #       message(sprintf("Repeat %d/%d | fold %d/%d | %s", repeat_id, params$repeats, fold_id, params$outer_folds, method))
-  #       start_time <- proc.time()[["elapsed"]]
-  # 
-  #       timed_fit <- run_method_with_timeout(
-  #         function() benchmark_fitters[[method]](X_train, Y_train),
-  #         params$method_timeout_sec
-  #       )
-  # 
-  #       runtime_sec <- proc.time()[["elapsed"]] - start_time
-  #       lambda_x <- NA_real_
-  #       lambda_y <- NA_real_
-  #       rho <- NA_real_
-  #       k <- NA_real_
-  #       train_mse <- NA_real_
-  #       train_cor <- NA_real_
-  #       train_dist <- NA_real_
-  #       test_mse <- NA_real_
-  #       test_cor <- NA_real_
-  #       test_dist <- NA_real_
-  #       test_genotype_cluster_accuracy <- NA_real_
-  #       test_genotype_cluster_ari <- NA_real_
-  #       artifact_payload <- list(status = "error", error_message = timed_fit$error_message)
-  #       benchmark_task_payload <- list()
-  # 
-  #       if (!is.null(timed_fit$result)) {
-  #         fit <- timed_fit$result
-  #         lambda_x <- if (!is.null(fit$lambda_x)) fit$lambda_x else NA_real_
-  #         lambda_y <- if (!is.null(fit$lambda_y)) fit$lambda_y else NA_real_
-  #         rho <- if (!is.null(fit$rho)) fit$rho else NA_real_
-  #         k <- if (!is.null(fit$k)) fit$k else NA_real_
-  # 
-  #         train_metrics <- calc_metrics(fit$U, fit$V, X_train, Y_train, "train")
-  #         test_metrics <- calc_metrics(fit$U, fit$V, X_test, Y_test, "test")
-  # 
-  #         train_mse <- train_metrics$train_mse
-  #         train_cor <- train_metrics$train_cor
-  #         train_dist <- train_metrics$train_dist
-  #         test_mse <- test_metrics$test_mse
-  #         test_cor <- test_metrics$test_cor
-  #         test_dist <- test_metrics$test_dist
-  # 
-  #         test_embedding <- compute_full_fit_embedding(fit$U, X_test)
-  #         genotype_cluster <- tryCatch(
-  #           evaluate_embedding_cluster_task(test_embedding, test_metadata$genotype, "genotype"),
-  #           error = function(e) NULL
-  #         )
-  #         if (!is.null(genotype_cluster)) {
-  #           test_genotype_cluster_accuracy <- genotype_cluster$summary$genotype_cluster_accuracy
-  #           test_genotype_cluster_ari <- genotype_cluster$summary$genotype_cluster_ari
-  #           benchmark_task_payload <- list(
-  #             test_embedding = test_embedding,
-  #             test_genotype_cluster = genotype_cluster$artifact$cluster
-  #           )
-  #         }
-  # 
-  #         artifact_payload <- if (!is.null(fit$artifact)) fit$artifact else fit
-  #       }
-  # 
-  #       artifact_path <- save_benchmark_artifact(
-  #         out_dir = params$out_dir,
-  #         repeat_id = repeat_id,
-  #         fold_id = fold_id,
-  #         method = method,
-  #         artifact = list(
-  #           method = method,
-  #           repeat_id = repeat_id,
-  #           fold_id = fold_id,
-  #           lambda_x = lambda_x,
-  #           lambda_y = lambda_y,
-  #           rho = rho,
-  #           k = k,
-  #           runtime_sec = runtime_sec,
-  #           timed_out = timed_fit$timed_out,
-  #           error_message = timed_fit$error_message,
-  #           result = artifact_payload,
-  #           benchmark_tasks = benchmark_task_payload
-  #         )
-  #       )
-  # 
-  #       row_idx <- row_idx + 1L
-  #       benchmark_rows[[row_idx]] <- data.frame(
-  #         repeat_id = repeat_id,
-  #         fold_id = fold_id,
-  #         train_n = nrow(X_train),
-  #         test_n = nrow(X_test),
-  #         method = method,
-  #         train_mse = train_mse,
-  #         train_cor = train_cor,
-  #         train_dist = train_dist,
-  #         test_mse = test_mse,
-  #         test_cor = test_cor,
-  #         test_dist = test_dist,
-  #         test_genotype_cluster_accuracy = test_genotype_cluster_accuracy,
-  #         test_genotype_cluster_ari = test_genotype_cluster_ari,
-  #         lambda_x = lambda_x,
-  #         lambda_y = lambda_y,
-  #         rho = rho,
-  #         k = k,
-  #         runtime_sec = runtime_sec,
-  #         timed_out = timed_fit$timed_out,
-  #         error_message = ifelse(is.na(timed_fit$error_message), "", timed_fit$error_message),
-  #         artifact_path = artifact_path,
-  #         stringsAsFactors = FALSE
-  #       )
-  # 
-  #       write_benchmark_outputs(bind_rows(benchmark_rows), params$out_dir)
-  #     }
-  #   }
-  # }
-  # 
-  # benchmark_df <- bind_rows(benchmark_rows)
-  # benchmark_summary <- write_benchmark_outputs(benchmark_df, params$out_dir)
-  # 
-  # optimal_params <- lapply(params$methods, function(method) {
-  #   choose_optimal_params(benchmark_df %>% filter(method == !!method))
-  # }) %>%
-  #   bind_rows()
-  # 
-  # utils::write.csv(
-  #   optimal_params,
-  #   file.path(params$out_dir, "optimal_parameters.csv"),
-  #   row.names = FALSE
-  # )
+  for (repeat_id in seq_len(params$repeats)) {
+    set.seed(params$seed + repeat_id)
+    folds <- make_folds(seq_len(nrow(X_raw)), k = params$outer_folds)
+  
+    for (fold_id in seq_along(folds)) {
+      test_idx <- folds[[fold_id]]
+      test_metadata <- metadata[test_idx, , drop = FALSE]
+  
+      #X_scaled <- scale_train_test(X_raw[-test_idx, , drop = FALSE], X_raw[test_idx, , drop = FALSE])
+      #Y_scaled <- scale_train_test(Y_raw[-test_idx, , drop = FALSE], Y_raw[test_idx, , drop = FALSE])
+  
+      #X_train <- X_scaled$train
+      #X_test <- X_scaled$test
+      #Y_train <- Y_scaled$train
+      #Y_test <- Y_scaled$test
+      X_train <- X_raw[-test_idx, , drop = FALSE]
+      X_test <- X_raw[test_idx, , drop = FALSE]
+      Y_train <- Y_raw[-test_idx, , drop = FALSE]
+      Y_test <- Y_raw[test_idx, , drop = FALSE]
+  
+      for (method in params$methods) {
+        message(sprintf("Repeat %d/%d | fold %d/%d | %s", repeat_id, params$repeats, fold_id, params$outer_folds, method))
+        start_time <- proc.time()[["elapsed"]]
+  
+        timed_fit <- run_method_with_timeout(
+          function() benchmark_fitters[[method]](X_train, Y_train),
+          params$method_timeout_sec
+        )
+  
+        runtime_sec <- proc.time()[["elapsed"]] - start_time
+        lambda_x <- NA_real_
+        lambda_y <- NA_real_
+        rho <- NA_real_
+        k <- NA_real_
+        train_mse <- NA_real_
+        train_cor <- NA_real_
+        train_dist <- NA_real_
+        test_mse <- NA_real_
+        test_cor <- NA_real_
+        test_dist <- NA_real_
+        test_genotype_cluster_accuracy <- NA_real_
+        test_genotype_cluster_ari <- NA_real_
+        artifact_payload <- list(status = "error", error_message = timed_fit$error_message)
+        benchmark_task_payload <- list()
+  
+        if (!is.null(timed_fit$result)) {
+          fit <- timed_fit$result
+          lambda_x <- if (!is.null(fit$lambda_x)) fit$lambda_x else NA_real_
+          lambda_y <- if (!is.null(fit$lambda_y)) fit$lambda_y else NA_real_
+          rho <- if (!is.null(fit$rho)) fit$rho else NA_real_
+          k <- if (!is.null(fit$k)) fit$k else NA_real_
+  
+          train_metrics <- calc_metrics(fit$U, fit$V, X_train, Y_train, "train")
+          test_metrics <- calc_metrics(fit$U, fit$V, X_test, Y_test, "test")
+  
+          train_mse <- train_metrics$train_mse
+          train_cor <- train_metrics$train_cor
+          train_dist <- train_metrics$train_dist
+          test_mse <- test_metrics$test_mse
+          test_cor <- test_metrics$test_cor
+          test_dist <- test_metrics$test_dist
+  
+          test_embedding <- compute_full_fit_embedding(fit$U, X_test)
+          genotype_cluster <- tryCatch(
+            evaluate_embedding_cluster_task(test_embedding, test_metadata$genotype, "genotype"),
+            error = function(e) NULL
+          )
+          if (!is.null(genotype_cluster)) {
+            test_genotype_cluster_accuracy <- genotype_cluster$summary$genotype_cluster_accuracy
+            test_genotype_cluster_ari <- genotype_cluster$summary$genotype_cluster_ari
+            benchmark_task_payload <- list(
+              test_embedding = test_embedding,
+              test_genotype_cluster = genotype_cluster$artifact$cluster
+            )
+          }
+  
+          artifact_payload <- if (!is.null(fit$artifact)) fit$artifact else fit
+        }
+  
+        artifact_path <- save_benchmark_artifact(
+          out_dir = params$out_dir,
+          repeat_id = repeat_id,
+          fold_id = fold_id,
+          method = method,
+          artifact = list(
+            method = method,
+            repeat_id = repeat_id,
+            fold_id = fold_id,
+            lambda_x = lambda_x,
+            lambda_y = lambda_y,
+            rho = rho,
+            k = k,
+            runtime_sec = runtime_sec,
+            timed_out = timed_fit$timed_out,
+            error_message = timed_fit$error_message,
+            result = artifact_payload,
+            benchmark_tasks = benchmark_task_payload
+          )
+        )
+  
+        row_idx <- row_idx + 1L
+        benchmark_rows[[row_idx]] <- data.frame(
+          repeat_id = repeat_id,
+          fold_id = fold_id,
+          train_n = nrow(X_train),
+          test_n = nrow(X_test),
+          method = method,
+          train_mse = train_mse,
+          train_cor = train_cor,
+          train_dist = train_dist,
+          test_mse = test_mse,
+          test_cor = test_cor,
+          test_dist = test_dist,
+          test_genotype_cluster_accuracy = test_genotype_cluster_accuracy,
+          test_genotype_cluster_ari = test_genotype_cluster_ari,
+          lambda_x = lambda_x,
+          lambda_y = lambda_y,
+          rho = rho,
+          k = k,
+          runtime_sec = runtime_sec,
+          timed_out = timed_fit$timed_out,
+          error_message = ifelse(is.na(timed_fit$error_message), "", timed_fit$error_message),
+          artifact_path = artifact_path,
+          stringsAsFactors = FALSE
+        )
+  
+        write_benchmark_outputs(bind_rows(benchmark_rows), params$out_dir)
+      }
+    }
+  }
+  
+  benchmark_df <- bind_rows(benchmark_rows)
+  benchmark_summary <- write_benchmark_outputs(benchmark_df, params$out_dir)
+  
+  optimal_params <- lapply(params$methods, function(method) {
+    choose_optimal_params(benchmark_df %>% filter(method == !!method))
+  }) %>%
+    bind_rows()
+  
+  utils::write.csv(
+    optimal_params,
+    file.path(params$out_dir, "optimal_parameters.csv"),
+    row.names = FALSE
+  )
 
   X_full <- full_data$X_full
   Y_full <- full_data$Y_full
@@ -1684,9 +1684,9 @@ main <- function() {
   saveRDS(
     list(
       params = params,
-      #benchmark_runs = benchmark_df,
-      #benchmark_summary = benchmark_summary,
-      #optimal_parameters = optimal_params,
+      benchmark_runs = benchmark_df,
+      benchmark_summary = benchmark_summary,
+      optimal_parameters = optimal_params,
       full_model_cv = full_model_cv_summary,
       full_data_fits = full_fit_artifacts,
       full_model_diet = diet_prediction_results

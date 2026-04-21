@@ -4,8 +4,12 @@ library(pracma)
 library(tidyverse)
 theme_set(theme_bw(base_size = 14))
 
- file_list <- list.files(path = "experiments/simulations/new_results", 
-                         pattern = "2026_newest_RRR_efficient_resultsnew_normalized*", full.names = TRUE)
+ # file_list <- list.files(path = "experiments/simulations/new_results", 
+ #                         pattern = "2026_newest_RRR_efficient_resultsnew_normalized*", full.names = TRUE)
+
+ file_list <- list.files(path = "/Users/clairedonnat/Documents/CCAR3_code/experiments/simulations/results/cca_new_results_04202026", 
+                         pattern = "*", full.names = TRUE)
+
 results <- bind_rows(lapply(file_list, read.csv))
 # 
 # 
@@ -18,9 +22,9 @@ summ = results %>% group_by(n, p1, p2, r, r_pca,
                             theta_strength,
                             normalize_diagonal,
                             prop_missing) %>%
-  summarise(distance_tot_mean = median(distance_tot),
-            distance_U_mean = mean(distance_U),
-            distance_V_mean = mean(distance_V),
+  summarise(distance_tot_mean = mean(distance_tot, na.rm=TRUE),
+            distance_U_mean = mean(distance_U, na.rm=TRUE),
+            distance_V_mean = mean(distance_V, na.rm=TRUE),
             distance_tot_q50 = quantile(distance_tot, 0.5, na.rm=TRUE),
             distance_tot_q75 = quantile(distance_tot, 0.75, na.rm=TRUE),
             distance_tot_q25 = quantile(distance_tot, 0.25, na.rm=TRUE),
@@ -58,58 +62,63 @@ summ = results %>% group_by(n, p1, p2, r, r_pca,
             FNR_q25 = quantile(FNR, 0.75, na.rm=TRUE),
             FNR_q75 = quantile(FNR, 0.25, na.rm=TRUE),
             time_med = quantile(time, 0.5, na.rm=TRUE),
-            time_mean = mean(time),
+            time_mean = mean(time, na.rm=TRUE),
             counts = n()
 
   ) %>%
   ungroup()
-write_csv(summ, "~/Downloads/results_sparse_rrr_experiments_fall.csv")
+write_csv(summ, "/Users/clairedonnat/Documents/CCAR3_code/experiments/simulations/results/cca_new_results_04202026/results_sparse_rrr_experiments_fall_new.csv")
 
 
-summ <- read_csv( "~/Downloads/results_sparse_rrr_experiments_fall.csv")
+#summ <- read_csv( "~/Downloads/results_sparse_rrr_experiments_fall_new.csv")
 
 unique(summ$method)
 
 
-
-legend_order <- c("Oracle", 
-                  "FIT_SAR_CV",
-                  #"FIT_SAR_BIC", 
-                  "Witten_Perm", 
-                  "Witten.CV",
-                  "SCCA_Parkhomenko",
-                  "Waaijenborg-CV", 
+unique
+legend_order <- c(#"Oracle", 
+                   "FIT_SAR_CV",
+                  # "FIT_SAR_BIC", 
+                  # "Witten_Perm", 
+                  # "Witten.CV",
+                  # "SCCA_Parkhomenko",
+                  # "Waaijenborg-CV", 
                   "ccar3",
-                 # "cca_rrr_-ADMM-one-iteration",
-                  "Fantope",
-                  "SGCA",
-                  "Chao" )
-my_colors  <- c(           "#999999",
+                  "ccar3_old_preprocessing" 
+                  #"cca_rrr_-ADMM-one-iteration",
+                  # "Fantope",
+                  # "SGCA",
+                  # "Chao" 
+                  )
+my_colors  <- c(        #  "#999999",
                 "#009E73",
-                #"#6EE212",
-                 "#0072B2",
-                 "#56B4E9",
-                "#F0E442",
-                "#6EE212",
+                # "#6EE212",
+                #  "#0072B2",
+                #  "#56B4E9",
+                # "#F0E442",
+                # "#F0E449",
                 "#000000",
-                "#D55E00",
-                "#CC79A7",
-                "#E69F00"
+                "#999999"
+                # "#D55E00",
+                # "#CC79A7",
+                # "#E69F00"
                 )
 
 unique(summ$method)
-labels_n <-    c("Oracle", 
+labels_n <-    c(#"Oracle", 
                  "SAR CV (Wilms et al)",
                  #"SAR BIC (Wilms et al)",
-                 "Sparse CCA, permuted\n(Witten et al)",
-                 "Sparse CCA with CV\n(Witten et al)",
-                 "SCCA (Parkhomenko et al)",
-                 "Sparse CCA with CV\n(Waaijenborg et al)",
+                 #"Sparse CCA, permuted\n(Witten et al)",
+                 #"Sparse CCA with CV\n(Witten et al)",
+                 #"SCCA (Parkhomenko et al)",
+                 #"Sparse CCA with CV\n(Waaijenborg et al)",
                  #"Sparse CCA (Waaijenborg et al)",
                  "CCAR3 (this paper)",
-                 "Fantope-CCA  (Gao et al)",
-                 "SGCA (Gao and Ma)",
-                 "Sparse CCA (Gao et al)")
+                 "CCAR3 (old proc)"
+                 #"Fantope-CCA  (Gao et al)",
+                 #"SGCA (Gao and Ma)",
+                 #"Sparse CCA (Gao et al)"
+                 )
 theme_set(theme_bw(base_size = 14))
 
 
@@ -125,12 +134,68 @@ unique(summ$overlapping_amount)
 
 summ$theta_strength <- factor(summ$theta_strength, levels = c("high", "medium", "low"))
 
-unique(summ$p2)
-ggplot(summ %>% filter( r_pca == 5, r==3,
-                        nnzeros==10, 
+unique(summ$distance_tot_mean
+       )
+ggplot(summ %>%
+         (summ %>% 
+            mutate(q_lab = paste0("q = ", p2),
+                   nnz_lab = paste0("nnz = ", p2),)%>%
+                filter( r_pca == 5, r==3,
+                        #nnzeros==6, 
                         ((p2==5) & p1 < 2000)| p1<3000,
-                        p2!=10,
+                        #p2!=10,
                         n==500,
+                        theta_strength == "high",
+                        method %in% legend_order,
+                        overlapping_amount==1
+),
+aes(x=p1, 
+    y = distance_tot_mean, 
+    colour =method)) +
+  geom_point(size=2)+
+  geom_line(linewidth=0.8)+
+  #geom_errorbar(aes(ymin=distance_tot_q975, ymax=distance_tot_q025,
+  #                  colour =method), width=0.05, alpha=0.5)+
+   scale_color_manual(values = my_colors, breaks = legend_order,
+                      labels = labels_n) +
+  facet_grid(p2 ~ nnzeros, scales = "free"
+  #            ,labeller = as_labeller(c(`5` = "q = 5",
+  #                                                                         `10` = "q = 10",
+  #                                                                         `20` = "q = 20",
+  #                                                                        `30` = "q = 30",
+  #                                                                        `50` = "q = 50",
+  #                                                                        `80` = "q = 80",
+  #                                                                        `100` = "n = 100",
+  #                                                                        `200` = "n = 200",
+  #                                                                        `300` = "n = 300",
+  #                                                                        `500` = "n = 500",
+  #                                                                        `high` = "High",
+  #                                                                        `1000` = "n = 1,000",
+  #                                                                        `2000` = "n = 2,000",
+  #                                                                        `10000` = "n = 10,000",
+  #                                                                        `medium` = "Medium",
+  #                                                                        `low` = "Low"
+  #                                                                        
+  # ))
+  ) +
+  xlab("p") + 
+  ylab(expression("Subspace Distance")) +
+  labs(colour="Method") + 
+  #scale_y_log10()+
+  #scale_x_log10()+
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "top")
+
+summ$time_mean
+ggplot(summ %>% 
+         mutate(q_lab = paste0("q = ", p2),
+                nnz_lab = paste0("nnz = ", p2),)
+         filter( r_pca == 5, r==3,
+                        nnzeros==6, 
+                        #((p2==5) & p1 < 2000)| p1<3000,
+                        #p2!=10,
+                        n==500,
+                        #theta_strength == "high",
                         method %in% legend_order,
                         overlapping_amount==1
 ),
@@ -143,24 +208,26 @@ aes(x=p1,
   #                  colour =method), width=0.05, alpha=0.5)+
   scale_color_manual(values = my_colors, breaks = legend_order,
                      labels = labels_n) +
-  facet_grid(p2 ~ theta_strength, scales = "free",labeller = as_labeller(c(`5` = "q = 5",
-                                                                          `10` = "q = 10",
-                                                                          `20` = "q = 20",
-                                                                         `30` = "q = 30",
-                                                                         `50` = "q = 50",
-                                                                         `80` = "q = 80",
-                                                                         `100` = "n = 100",
-                                                                         `200` = "n = 200",
-                                                                         `300` = "n = 300",
-                                                                         `500` = "n = 500",
-                                                                         `high` = "High",
-                                                                         `1000` = "n = 1,000",
-                                                                         `2000` = "n = 2,000",
-                                                                         `10000` = "n = 10,000",
-                                                                         `medium` = "Medium",
-                                                                         `low` = "Low"
-                                                                         
-  ))) +
+  facet_grid(p2 ~ theta_strength, scales = "free"
+                        ,labeller = as_labeller(c(`5` = "q = 5",
+                                                                                     `10` = "q = 10",
+                                                                                     `20` = "q = 20",
+                                                                                    `30` = "q = 30",
+                                                                                    `50` = "q = 50",
+                                                                                    `80` = "q = 80",
+                                                                                    `100` = "n = 100",
+                                                                                    `200` = "n = 200",
+                                                                                    `300` = "n = 300",
+                                                                                    `500` = "n = 500",
+                                                                                    `high` = "High",
+                                                                                    `1000` = "n = 1,000",
+                                                                                    `2000` = "n = 2,000",
+                                                                                    `10000` = "n = 10,000",
+                                                                                    `medium` = "Medium",
+                                                                                    `low` = "Low"
+
+             ))
+  ) +
   xlab("p") + 
   ylab(expression("Subspace Distance")) +
   labs(colour="Method") + 
@@ -214,27 +281,182 @@ aes(x=n,
   theme(legend.position = "top")
 uniq
 unique(summ$r)
-summ$time_mean
-ggplot(summ %>% filter( r_pca == 5, r==3,
-                        nnzeros==10, 
-                        ((p2==5) & p1 < 2000)| p1<3000,
-                        p2!=10,
-                        n==500,
-                        method %in% c( 
-                                      "FIT_SAR_CV",
-                                      #"FIT_SAR_BIC", 
-                                      "Witten_Perm", 
-                                      "Witten.CV",
-                                      "ccar3",
-                                      # "cca_rrr_-ADMM-one-iteration",
-                                      "Fantope",
-                                      "SGCA",
-                                      "Chao" ),
-                        method!="Oracle",
-                        overlapping_amount==1
-),
-aes(x=p1, 
+
+
+
+legend_order <- c(
+  "Oracle", 
+  "FIT_SAR_CV",
+  #"FIT_SAR_BIC",
+  "Witten_Perm",
+  "Witten.CV",
+  "SCCA_Parkhomenko",
+  #"Waaijenborg-CV",
+  "ccar3",
+  #"ccar3_old_preprocessing", 
+  #"cca_rrr_-ADMM-one-iteration",
+  "Fantope",
+  "SGCA",
+  "Chao"
+)
+my_colors  <- c(        
+  "#999999",
+  "#009E73",
+  #"#6EE212",
+   "#0072B2",
+   "#56B4E9",
+  "#F0E442",
+ #"pink",
+  "#000000",
+  #"#999999",
+  "#D55E00",
+  "#CC79A7",
+  "#E69F00"
+)
+
+unique(summ$method)
+labels_n <-    c(
+  "Oracle", 
+  "SAR CV (Wilms et al)",
+  #"SAR BIC (Wilms et al)",
+  "Sparse CCA, permuted\n(Witten et al)",
+  "Sparse CCA with CV\n(Witten et al)",
+  "SCCA (Parkhomenko et al)",
+  #"Sparse CCA with CV\n(Waaijenborg et al)",
+  #"Sparse CCA (Waaijenborg et al)",
+  "CCAR3 (this paper)",
+  #"CCAR3 (old proc)",
+  "Fantope-CCA  (Gao et al)",
+  "SGCA (Gao and Ma)",
+  "Sparse CCA (Gao et al)"
+)
+theme_set(theme_bw(base_size = 14))
+
+
+
+library(patchwork)
+library(dplyr)
+library(ggplot2)
+library(stringr)
+testy_test = testy_test %>%
+  filter(method %in% c("FIT_SAR_CV",  "ccar3"))
+# --- Plot 1 (Has the legend) ---
+p1 <- ggplot(summ %>% filter( 
+  r_pca == 5, r==3,
+  nnzeros==6, 
+  ((p2==5) & p1 < 2000) | p1<3000,
+  p2!=10,
+  n==500,
+  method %in% legend_order,
+  # method!="Oracle",  
+  overlapping_amount==1
+) %>% 
+  mutate(q_lab = paste0("q = ", p2),
+         theta_lab = str_to_title(paste0(theta_strength,  "\ncorrelations")),
+         nnz_lab = paste0("nnz = ", p2)),
+aes(x = p1, 
+    y = distance_tot_mean, 
+    colour = method)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 0.8) +
+  scale_x_log10() +
+  scale_y_log10() +
+  scale_color_manual(values = my_colors, breaks = legend_order,
+                     labels = labels_n, drop = FALSE) +
+  facet_grid(theta_lab ~ q_lab, scales = "free") +
+  xlab("p") + 
+  ylab(expression("Mean distance")) +
+  labs(colour = "Method") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  # --- ALL LEGEND FORMATTING GOES HERE NOW ---
+  # theme(
+  #   legend.position = "top",
+  #   legend.title = element_text(size = 9),
+  #   legend.text = element_text(size = 8),
+  #   legend.key.size = unit(0.8, "lines"),
+  #   legend.spacing.y = unit(0, "pt"),
+  #   legend.spacing.x = unit(0, "pt"),
+  #   legend.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt"),
+  #   legend.box.margin = margin(t = 0, r = 0, b = -10, l = 0, unit = "pt") 
+  # ) + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  # --- ADJUSTED LEGEND SIZING ---
+  theme(
+    legend.position = "top",
+    # 1. Increase text sizes (default is usually 11 for text, 12 for title)
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    # 2. Make the colored lines/keys bigger again
+    legend.key.size = unit(1.2, "lines"), 
+    # 3. Add just a tiny bit of padding back between items
+    legend.spacing.y = unit(2, "pt"),
+    legend.spacing.x = unit(2, "pt"),
+    # Keep the outer margins tight to save overall space
+    legend.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "pt"),
+    legend.box.margin = margin(t = 0, r = 0, b = -5, l = 0, unit = "pt") 
+  ) + 
+  guides(colour = guide_legend(nrow = 3, byrow = TRUE))
+
+# --- Plot 2 (NO legend) ---
+p2 <- ggplot(summ %>% filter( 
+  r_pca == 5, r==3,
+  nnzeros==6, 
+  ((p2==5) & p1 < 2000) | p1<3000,
+  p2!=10,
+  n==500,
+  theta_strength == "medium",
+  method %in% legend_order,
+  method!="Oracle", 
+  overlapping_amount==1
+) %>% 
+  mutate(q_lab = paste0("q = ", p2),
+         theta_lab = str_to_title(paste0(theta_strength,  "\ncorrelations")),
+         nnz_lab = paste0("nnz = ", p2)),
+aes(x = p1, 
     y = time_mean, 
+    colour = method)) +
+  geom_point(size = 2) +
+  geom_line(linewidth = 0.8) +
+  scale_x_log10() +
+  scale_y_log10() +
+  scale_color_manual(values = my_colors, breaks = legend_order, labels = labels_n) +
+  facet_grid(theta_lab ~ q_lab, scales = "free") +
+  xlab("p") + 
+  ylab(expression("Time (s)")) +
+  labs(colour = "Method") + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(legend.position = "none") # This stays dead this time!
+
+# --- Combine with Patchwork ---
+# We no longer need guides="collect" or the "&" operator.
+# p1 handles the top legend entirely on its own.
+combined_plot <- (p1 / p2) + 
+  plot_layout(heights = c(4, 1))
+
+combined_plot
+combined_plot
+
+
+
+
+unique(summ$p1)
+unique(summ$p2)
+p3<- ggplot(summ %>% filter( r_pca == 5, r==3,
+                             #nnzeros==6, 
+                             ((p2==5) & p1 < 2000)| p1<3000,
+                             p2==30,
+                             n==500,
+                             p1 == 1000,
+                             theta_strength == "medium",
+                             method %in% legend_order,
+                             # method!="Oracle",
+                             overlapping_amount==1
+) %>% 
+  mutate(q_lab = paste0("q = ", p2),
+         theta_lab = stringr::str_to_title(paste0(theta_strength,  "\ncorrelations")),
+         nnz_lab = paste0("nnz = ", p2)),
+aes(x=nnzeros, 
+    y = distance_tot_mean, 
     colour =method)) +
   geom_point(size=2)+
   geom_line(linewidth=0.8)+
@@ -242,30 +464,18 @@ aes(x=p1,
   #                  colour =method), width=0.05, alpha=0.5)+
   scale_color_manual(values = my_colors, breaks = legend_order,
                      labels = labels_n) +
-  facet_grid(theta_strength~ p2, scales = "free",labeller = as_labeller(c(`5` = "q = 5",
-                                                                          `10` = "q = 10",
-                                                                          `30` = "q = 30",
-                                                                          `50` = "q = 50",
-                                                                          `80` = "q = 80",
-                                                                          `100` = "n = 100",
-                                                                          `200` = "n = 200",
-                                                                          `300` = "n = 300",
-                                                                          `500` = "n = 500",
-                                                                          `high` = "High",
-                                                                          `1000` = "n = 1,000",
-                                                                          `2000` = "n = 2,000",
-                                                                          `10000` = "n = 10,000",
-                                                                          `medium` = "Medium",
-                                                                          `low` = "Low"
-                                                                          
-  ))) +
+  facet_grid(p1 ~ q_lab, scales = "free") +
   xlab("p") + 
-  ylab(expression("Time Elapsed (s)")) +
+  ylab(expression("Mean Subspace Distance")) +
   labs(colour="Method") + 
   scale_y_log10()+
   #scale_x_log10()+
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  theme(legend.position = "top")
+  theme(legend.position = "top")+guides(colour = guide_legend(nrow = 3))
+p3
+
+
+
 unique(summ$n)
 
 ggplot(summ %>% filter( r_pca == 5, r==3,

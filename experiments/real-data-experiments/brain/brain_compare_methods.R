@@ -96,6 +96,7 @@ source_filtered_r_file <- function(path, replacements = list()) {
   eval(parse(text = lines), envir = .GlobalEnv)
 }
 
+<<<<<<< HEAD
 resolve_ccar3_source_dir <- function(candidate) {
   if (is.null(candidate) || !nzchar(candidate)) {
     return(NULL)
@@ -223,10 +224,57 @@ source_ccar3_methods <- function(project_root, ccar3_dir = "~/Documents/ccar3/R"
     Sys.getenv("CCAR3_PKG_PATH", unset = ""),
     file.path(path.expand("~"), "Documents", "ccar3", "R"),
     file.path(path.expand("~"), "Documents", "ccar3")
+=======
+source_ccar3_package_source <- function(ccar3_dir) {
+  replacements <- list(
+    list(pattern = "^library\\((foreach|caret|pracma)\\).*", replacement = ""),
+    list(pattern = "caret::createFolds", replacement = "create_cv_folds"),
+    list(pattern = "corpcor::cov\\.shrink\\(Y(?:,\\s*verbose\\s*=\\s*verbose)?\\)", replacement = "stats::cov(Y)")
+  )
+
+  source_filtered_r_file(file.path(ccar3_dir, "R", "helpers.r"))
+  source_filtered_r_file(file.path(ccar3_dir, "R", "utils.R"))
+  source_filtered_r_file(
+    file.path(ccar3_dir, "R", "reduced_rank_regression.R"),
+    replacements = replacements
+  )
+  source_filtered_r_file(
+    file.path(ccar3_dir, "R", "group_reduced_rank_regression.R"),
+    replacements = replacements
+  )
+  source_filtered_r_file(
+    file.path(ccar3_dir, "R", "graph_reduced_rank_regression.R"),
+    replacements = replacements
+  )
+}
+
+source_ccar3_methods <- function(project_root, ccar3_dir = NULL) {
+  local_paths <- file.path(
+    project_root,
+    "src",
+    c(
+      "reduced_rank_regression.R",
+      "group_reduced_rank_regression.R",
+      "graph_reduced_rank_regression.R"
+    )
+  )
+
+  if (all(file.exists(local_paths)) && requireNamespace("ccar3", quietly = TRUE)) {
+    source_existing_files(local_paths)
+    return(invisible("installed-package"))
+  }
+
+  package_candidates <- c(
+    ccar3_dir,
+    Sys.getenv("CCAR3_PKG_PATH", unset = ""),
+    file.path(dirname(project_root), "ccar3"),
+    file.path(dirname(project_root), "CCAR3")
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   )
   package_candidates <- unique(package_candidates[nzchar(package_candidates)])
 
   for (candidate in package_candidates) {
+<<<<<<< HEAD
     source_dir <- resolve_ccar3_source_dir(candidate)
     repo_root <- resolve_ccar3_repo_root(candidate)
     if (is.null(source_dir)) {
@@ -243,6 +291,21 @@ source_ccar3_methods <- function(project_root, ccar3_dir = "~/Documents/ccar3/R"
   stop(
     "Could not load CCAR3 core methods from repo source. Checked:\n- ",
     paste(package_candidates, collapse = "\n- "),
+=======
+    if (!dir.exists(candidate) || !file.exists(file.path(candidate, "DESCRIPTION"))) {
+      next
+    }
+
+    candidate <- normalizePath(candidate, winslash = "/", mustWork = TRUE)
+    options(ccar3_pkg_path = candidate)
+    Sys.setenv(CCAR3_PKG_PATH = candidate)
+    source_ccar3_package_source(candidate)
+    return(invisible("local-package-source"))
+  }
+
+  stop(
+    "Could not load CCAR3 core methods. Expected either an installed `ccar3` package plus local src/ wrappers, or a local ccar3 package checkout via --ccar3_dir / CCAR3_PKG_PATH.",
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
     call. = FALSE
   )
 }
@@ -320,6 +383,7 @@ read_matrix_csv <- function(path) {
   mat
 }
 
+<<<<<<< HEAD
 prepare_train_test_matrix <- function(train_mat, test_mat = NULL, scale = FALSE) {
   train_mat <- as.matrix(train_mat)
   test_mat <- if (is.null(test_mat)) NULL else as.matrix(test_mat)
@@ -365,6 +429,18 @@ prepare_train_test_matrix <- function(train_mat, test_mat = NULL, scale = FALSE)
     center = train_means,
     scale = train_sds
   )
+=======
+standardize_with_mean_impute <- function(mat) {
+  mat <- as.matrix(mat)
+  col_means <- colMeans(mat, na.rm = TRUE)
+  for (j in seq_len(ncol(mat))) {
+    missing <- is.na(mat[, j])
+    if (any(missing)) {
+      mat[missing, j] <- col_means[j]
+    }
+  }
+  scale(mat)
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 }
 
 infer_positions_name <- function(positions) {
@@ -372,6 +448,7 @@ infer_positions_name <- function(positions) {
     return(positions$name)
   }
   if ("Region" %in% names(positions)) {
+<<<<<<< HEAD
     return(vapply(
       strsplit(positions$Region, "_", fixed = TRUE),
       function(parts) {
@@ -387,6 +464,9 @@ infer_positions_name <- function(positions) {
       },
       character(1)
     ))
+=======
+    return(vapply(strsplit(positions$Region, "_"), function(x) tail(x, 1), character(1)))
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   }
   rep(NA_character_, nrow(positions))
 }
@@ -441,7 +521,10 @@ build_positions_table <- function(coordinates_path, label_path = NULL) {
 
   if (!is.null(gyrus_col)) {
     labels <- labels %>%
+<<<<<<< HEAD
       tidyr::fill(dplyr::all_of(gyrus_col)) %>%
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
       dplyr::mutate(Gyrus = dplyr::coalesce(.data[[gyrus_col]], Gyrus))
   }
 
@@ -462,6 +545,7 @@ build_positions_table <- function(coordinates_path, label_path = NULL) {
   positions
 }
 
+<<<<<<< HEAD
 read_roi_group_metadata <- function(group_path) {
   if (is.null(group_path) || !file.exists(group_path)) {
     return(NULL)
@@ -506,6 +590,8 @@ apply_roi_group_metadata <- function(positions, group_path = NULL) {
   positions
 }
 
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 read_group_assignments <- function(group_path) {
   if (is.null(group_path) || !file.exists(group_path)) {
     return(NULL)
@@ -692,6 +778,7 @@ create_cv_folds <- function(indices, k, list = TRUE, returnTrain = FALSE) {
   folds
 }
 
+<<<<<<< HEAD
 compute_inverse_sqrt_transform <- function(gram, jitter = 1e-8, max_tries = 6) {
   gram <- (as.matrix(gram) + t(as.matrix(gram))) / 2
   p <- nrow(gram)
@@ -891,6 +978,21 @@ cv_fold_rmse_all_na <- function(fit) {
     "rmse" %in% names(fit$cv_folds) &&
     nrow(fit$cv_folds) > 0 &&
     all(is.na(fit$cv_folds$rmse))
+=======
+score_pair <- function(X, Y, U, V, split, fold_id, method, lambda) {
+  XU <- as.matrix(X) %*% U
+  YV <- as.matrix(Y) %*% V
+  tibble::tibble(
+    method = method,
+    lambda = lambda,
+    fold = fold_id,
+    split = split,
+    component = seq_len(ncol(U)),
+    covariance = diag(stats::cov(XU, YV)),
+    mse = colMeans((XU - YV) ^ 2),
+    correlation = diag(stats::cor(XU, YV))
+  )
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 }
 
 fit_ccar3_method <- function(method, X_train, Y_train, r, lambda_grid,
@@ -906,8 +1008,12 @@ fit_ccar3_method <- function(method, X_train, Y_train, r, lambda_grid,
       lambdas = lambda_grid,
       kfolds = inner_kfolds,
       standardize = FALSE,
+<<<<<<< HEAD
       preprocess="none",
       parallelize = TRUE,
+=======
+      parallelize = FALSE,
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
       nb_cores = nb_cores,
       niter = niter,
       rho = rho,
@@ -915,9 +1021,15 @@ fit_ccar3_method <- function(method, X_train, Y_train, r, lambda_grid,
       LW_Sy = TRUE
     ))
   }
+<<<<<<< HEAD
   
   if (method == "cca_graph_rrr_cv") {
     fit <- cca_graph_rrr_cv(
+=======
+
+  if (method == "cca_graph_rrr_cv") {
+    return(cca_graph_rrr_cv(
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
       X = X_train,
       Y = Y_train,
       Gamma = Gamma,
@@ -926,12 +1038,17 @@ fit_ccar3_method <- function(method, X_train, Y_train, r, lambda_grid,
       kfolds = inner_kfolds,
       standardize = FALSE,
       preprocess = "none",
+<<<<<<< HEAD
       parallelize = TRUE,
+=======
+      parallelize = FALSE,
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
       nb_cores = nb_cores,
       niter = niter,
       rho = rho,
       thresh = thresh,
       LW_Sy = TRUE
+<<<<<<< HEAD
     )
 
     if (cv_fold_rmse_all_na(fit)) {
@@ -955,6 +1072,9 @@ fit_ccar3_method <- function(method, X_train, Y_train, r, lambda_grid,
     }
 
     return(fit)
+=======
+    ))
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   }
 
   if (method == "cca_group_rrr_cv") {
@@ -967,7 +1087,11 @@ fit_ccar3_method <- function(method, X_train, Y_train, r, lambda_grid,
       kfolds = inner_kfolds,
       standardize = FALSE,
       preprocess = "none",
+<<<<<<< HEAD
       parallelize = TRUE,
+=======
+      parallelize = FALSE,
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
       nb_cores = nb_cores,
       niter = niter,
       rho = rho,
@@ -1011,6 +1135,7 @@ if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 }
 
+<<<<<<< HEAD
 checkpoint_dir <- file.path(output_dir, "fold_method_checkpoints")
 if (!dir.exists(checkpoint_dir)) {
   dir.create(checkpoint_dir, recursive = TRUE, showWarnings = FALSE)
@@ -1074,6 +1199,8 @@ if (removed_checkpoints > 0) {
   message("Cleared ", removed_checkpoints, " old checkpoint CSVs from: ", checkpoint_dir)
 }
 
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 x_path <- resolve_existing_file(
   c(
     opts$x_path,
@@ -1116,6 +1243,7 @@ if (is.na(label_path)) {
   label_path <- NULL
 }
 
+<<<<<<< HEAD
 roi_group_candidates <- c(
   opts$group_path,
   Sys.getenv("BRAIN_GROUP_PATH", unset = ""),
@@ -1132,14 +1260,25 @@ if (is.na(roi_group_path)) {
 aggregation_group_candidates <- c(
   opts$aggregation_group_path,
   Sys.getenv("BRAIN_AGGREGATION_GROUP_PATH", unset = ""),
+=======
+group_candidates <- c(
+  opts$group_path,
+  Sys.getenv("BRAIN_GROUP_PATH", unset = ""),
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   file.path(data_dir, "activation_groups.xlsx"),
   file.path(data_dir, "activation_groups.csv"),
   file.path(project_root, "data", "activation_groups.xlsx"),
   file.path(project_root, "data", "activation_groups.csv")
 )
+<<<<<<< HEAD
 aggregation_group_path <- aggregation_group_candidates[file.exists(aggregation_group_candidates)][1]
 if (is.na(aggregation_group_path)) {
   aggregation_group_path <- NULL
+=======
+group_path <- group_candidates[file.exists(group_candidates)][1]
+if (is.na(group_path)) {
+  group_path <- NULL
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 }
 
 X <- read_matrix_csv(x_path)
@@ -1149,6 +1288,7 @@ if (nrow(X) != nrow(Y)) {
   stop("X and Y must have the same number of rows.", call. = FALSE)
 }
 
+<<<<<<< HEAD
 positions <- build_positions_table(coordinates_path, label_path)
 if (!is.null(label_path)) {
   message("Using atlas label metadata from: ", label_path)
@@ -1158,6 +1298,15 @@ if (!is.null(roi_group_path)) {
   message("Using ROI group metadata from: ", roi_group_path)
 }
 aligned_X <- align_brain_matrix_to_positions(X, positions, group_path = aggregation_group_path)
+=======
+if (as_bool(opts$standardize_inputs, default = FALSE)) {
+  X <- standardize_with_mean_impute(X)
+  Y <- standardize_with_mean_impute(Y)
+}
+
+positions <- build_positions_table(coordinates_path, label_path)
+aligned_X <- align_brain_matrix_to_positions(X, positions, group_path = group_path)
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 X <- aligned_X$X
 positions <- aligned_X$positions
 if (!is.null(aligned_X$message)) {
@@ -1166,6 +1315,7 @@ if (!is.null(aligned_X$message)) {
 
 Gamma <- build_knn_graph_incidence(positions, k = as_num(opts$graph_k, 4))
 groups <- build_groups(
+<<<<<<< HEAD
   positions
 )
 group_count <- length(groups)
@@ -1173,6 +1323,16 @@ message("Constructed ", group_count, " anatomical groups for group-regularized C
 
 outer_folds <- as.integer(as_num(opts$outer_folds, 20))
 inner_kfolds <- as.integer(as_num(opts$inner_folds, 15))
+=======
+  positions,
+  group_path = if (isTRUE(aligned_X$aggregated)) NULL else group_path,
+  expected_n_features = ncol(X)
+)
+
+rank_r <- as.integer(as_num(opts$r, 3))
+outer_folds <- as.integer(as_num(opts$outer_folds, 20))
+inner_kfolds <- as.integer(as_num(opts$inner_folds, outer_folds - 1))
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 seed <- as.integer(as_num(opts$seed, 123))
 lambda_grid <- 10 ^ seq(
   from = as_num(opts$lambda_min_log10, -3),
@@ -1186,6 +1346,7 @@ nb_cores <- if (is.null(opts$nb_cores) || identical(opts$nb_cores, "")) NULL els
 
 all_methods <- c(
   "cca_rrr_cv",
+<<<<<<< HEAD
   # "cca_graph_rrr_cv",
   # "cca_group_rrr_cv",
   # "FIT_SAR_CV",
@@ -1197,6 +1358,19 @@ all_methods <- c(
   # "SCCA_Parkhomenko",
   # "Chao",
   # "Fantope",
+=======
+  "cca_graph_rrr_cv",
+  "cca_group_rrr_cv",
+  "FIT_SAR_CV",
+  "FIT_SAR_BIC",
+  "Witten_Perm",
+  "Witten.CV",
+  "Waaijenborg-Author",
+  "Waaijenborg-CV",
+  "SCCA_Parkhomenko",
+  "Chao",
+  "Fantope",
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   "SGCA"
 )
 
@@ -1211,10 +1385,14 @@ baseline_methods <- setdiff(methods, ccar3_methods)
 available_methods <- character()
 
 if (length(ccar3_methods) > 0) {
+<<<<<<< HEAD
   ccar3_dir <- opts$ccar3_dir %||% Sys.getenv(
     "CCAR3_PKG_PATH",
     unset = file.path(path.expand("~"), "Documents", "ccar3", "R")
   )
+=======
+  ccar3_dir <- opts$ccar3_dir %||% Sys.getenv("CCAR3_PKG_PATH", unset = "")
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   ccar3_load_error <- tryCatch(
     {
       source_ccar3_methods(project_root, ccar3_dir = ccar3_dir)
@@ -1254,6 +1432,7 @@ if (length(methods) == 0) {
   )
 }
 
+<<<<<<< HEAD
 if ("cca_group_rrr_cv" %in% methods && group_count != 30) {
   stop(
     "Expected 30 anatomical groups for `cca_group_rrr_cv`, but built ",
@@ -1263,11 +1442,14 @@ if ("cca_group_rrr_cv" %in% methods && group_count != 30) {
   )
 }
 
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 set.seed(seed)
 folds <- create_cv_folds(seq_len(nrow(X)), k = outer_folds, list = TRUE, returnTrain = FALSE)
 
 results <- list()
 errors <- list()
+<<<<<<< HEAD
 scale_inputs_with_train <- as_bool(opts$standardize_inputs, default = FALSE)
 
 message("Running brain comparison on ", nrow(X), " subjects, ", ncol(X), " ROIs, ", ncol(Y), " outcomes.")
@@ -1279,6 +1461,12 @@ if (scale_inputs_with_train) {
 }
 X = scale(X)
 Y = scale(Y)
+=======
+
+message("Running brain comparison on ", nrow(X), " subjects, ", ncol(X), " ROIs, ", ncol(Y), " outcomes.")
+message("Methods: ", paste(methods, collapse = ", "))
+
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 for (fold_id in seq_along(folds)) {
   test_idx <- sort(as.integer(folds[[fold_id]]))
   train_idx <- setdiff(seq_len(nrow(X)), test_idx)
@@ -1288,6 +1476,7 @@ for (fold_id in seq_along(folds)) {
   X_test <- X[test_idx, , drop = FALSE]
   Y_test <- Y[test_idx, , drop = FALSE]
 
+<<<<<<< HEAD
   #x_fold <- prepare_train_test_matrix(X_train, X_test, scale = scale_inputs_with_train)
   #y_fold <- prepare_train_test_matrix(Y_train, Y_test, scale = scale_inputs_with_train)
   #X_train <- x_fold$train
@@ -1299,13 +1488,18 @@ for (fold_id in seq_along(folds)) {
   # X_test <- scale(X_test, scale=FALSE)
   # Y_test <- scale(Y_test, scale=FALSE)
 
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   message(sprintf("Outer fold %d/%d", fold_id, length(folds)))
 
   for (method in methods) {
     message("  Fitting ", method)
 
+<<<<<<< HEAD
     start_time <- proc.time()[["elapsed"]]
     error_message <- NULL
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
     fit <- tryCatch(
       {
         if (startsWith(method, "cca_")) {
@@ -1335,6 +1529,7 @@ for (fold_id in seq_along(folds)) {
         }
       },
       error = function(e) {
+<<<<<<< HEAD
         error_message <<- conditionMessage(e)
         NULL
       }
@@ -1360,12 +1555,25 @@ for (fold_id in seq_along(folds)) {
       )
       remove_if_exists(c(result_checkpoint_path, cv_summary_checkpoint_path, cv_folds_checkpoint_path))
       message("    Wrote error checkpoint: ", error_checkpoint_path)
+=======
+        errors[[length(errors) + 1]] <<- tibble::tibble(
+          fold = fold_id,
+          method = method,
+          error = conditionMessage(e)
+        )
+        NULL
+      }
+    )
+
+    if (is.null(fit)) {
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
       next
     }
 
     U <- fit$U %||% fit$u
     V <- fit$V %||% fit$v
     lambda_value <- fit$lambda %||% NA_real_
+<<<<<<< HEAD
     standardized_fit <- if (startsWith(method, "cca_")) {
       inspect_train_scores(X_train, Y_train, U, V)
     } else {
@@ -1417,6 +1625,13 @@ for (fold_id in seq_along(folds)) {
     readr::write_csv(current_summary_df, summary_path)
     message("    Wrote results checkpoint: ", result_checkpoint_path)
     message("    Updated aggregate CSVs: ", results_path, " and ", summary_path)
+=======
+
+    results[[length(results) + 1]] <- dplyr::bind_rows(
+      score_pair(X_train, Y_train, U, V, "train", fold_id, method, lambda_value),
+      score_pair(X_test, Y_test, U, V, "test", fold_id, method, lambda_value)
+    )
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
   }
 }
 
@@ -1427,7 +1642,24 @@ if (nrow(results_df) == 0) {
   stop("All method fits failed; no results were produced.", call. = FALSE)
 }
 
+<<<<<<< HEAD
 summary_df <- build_summary_df(results_df)
+=======
+summary_df <- results_df %>%
+  dplyr::group_by(method, split) %>%
+  dplyr::summarise(
+    mean_covariance = mean(covariance, na.rm = TRUE),
+    mean_correlation = mean(correlation, na.rm = TRUE),
+    mean_mse = mean(mse, na.rm = TRUE),
+    median_lambda = median(lambda, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(split, dplyr::desc(mean_correlation), mean_mse)
+
+results_path <- file.path(output_dir, "brain_method_comparison_results.csv")
+summary_path <- file.path(output_dir, "brain_method_comparison_summary.csv")
+errors_path <- file.path(output_dir, "brain_method_comparison_errors.csv")
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 
 readr::write_csv(results_df, results_path)
 readr::write_csv(summary_df, summary_path)
@@ -1437,7 +1669,10 @@ if (nrow(errors_df) > 0) {
 
 message("Saved detailed results to: ", results_path)
 message("Saved summary results to: ", summary_path)
+<<<<<<< HEAD
 message("Saved per-fit checkpoints to: ", checkpoint_dir)
+=======
+>>>>>>> 4ca36a5a0fc1cc056c530d57b5a6ef8498fe784e
 if (nrow(errors_df) > 0) {
   message("Saved fitting errors to: ", errors_path)
 }
